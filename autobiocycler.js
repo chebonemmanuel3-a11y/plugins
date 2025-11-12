@@ -7,25 +7,30 @@ const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 /**
  * Fetches a random quote and updates the bot's profile status.
- * @param {object} client - The bot client object (from the message object).
+ * @param {object} client - The bot client object.
  * @param {function} sendReply - The message.sendReply function for logging.
  */
 const updateBio = async (client, sendReply = null) => {
+    let newBio = "✨ RagnaBot is online! Use .menu to see commands. ✨"; // Default fallback bio
+
     try {
         // 1. Fetch random quotes from ZenQuotes API
         const response = await axios.get('https://zenquotes.io/api/random');
         
-        // ZenQuotes API returns an array, typically with one quote object
-        const quoteData = response.data[0];
-        
-        if (!quoteData || !quoteData.q) {
-            throw new Error("Invalid response structure from quote API.");
+        // 2. Add robust check: Ensure response.data is an array and has content
+        if (response && response.data && Array.isArray(response.data) && response.data.length > 0) {
+            const quoteData = response.data[0];
+            
+            if (quoteData.q && quoteData.a) {
+                // Format the new bio: Quote (Q) by Author (A)
+                newBio = `${quoteData.q} — ${quoteData.a}`; 
+            }
+        } else {
+            // Log that the API failed but we will use the fallback bio
+            console.error('Auto-Bio Cycler: Quote API failed to return valid data.');
         }
-        
-        // Format the new bio: Quote (Q) by Author (A)
-        const newBio = `${quoteData.q} — ${quoteData.a}`; 
-        
-        // 2. Update the bot's profile status (Confirmed working function)
+
+        // 3. Update the bot's profile status (Confirmed working function)
         await client.updateProfileStatus(newBio); 
         
         if (sendReply) {
@@ -33,19 +38,21 @@ const updateBio = async (client, sendReply = null) => {
         }
 
     } catch (error) {
-        console.error('Auto-Bio Cycler Error:', error.message);
+        console.error('Auto-Bio Cycler Network/API Error:', error.message);
+        
+        // If API fails due to network, update bio with the safe fallback text
+        await client.updateProfileStatus(newBio); 
+        
         if (sendReply) {
-            await sendReply(`❌ Failed to update bio. Check console for details.`);
+            await sendReply(`❌ Failed to fetch new bio (Network/API Error). Using fallback bio.`);
         }
-        // In a real bot, you might add logic here to retry or stop the interval 
-        // if the API is failing repeatedly.
     }
 };
 
 // --- Command: .autobio start ---
 Module({
     pattern: 'autobio start',
-    fromMe: true, // Owner-only command
+    fromMe: true,
     desc: 'Starts the 5-minute auto-bio update cycle.',
     type: 'utility'
 }, async (message) => {
@@ -60,8 +67,7 @@ Module({
     
     // 2. Set up the interval
     autoBioInterval = setInterval(() => {
-        // Note: We cannot pass message.sendReply here as it is tied to a specific chat,
-        // so we just call the core function for background updates.
+        // Background updates, no chat reply
         updateBio(client); 
     }, INTERVAL_MS);
 
@@ -71,7 +77,7 @@ Module({
 // --- Command: .autobio stop ---
 Module({
     pattern: 'autobio stop',
-    fromMe: true, // Owner-only command
+    fromMe: true,
     desc: 'Stops the auto-bio update cycle.',
     type: 'utility'
 }, async (message) => {
@@ -85,8 +91,3 @@ Module({
 
     await message.sendReply('❌ Auto-Bio Cycler STOPPED!');
 });
-
-// --- Startup Logic (Optional but recommended) ---
-// If your framework has a way to run code on startup, 
-// you can automatically run the 'start' command here. 
-// For now, this is left out, assuming you will manually run .autobio start.
