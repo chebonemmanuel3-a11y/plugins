@@ -1,69 +1,60 @@
-let rotateTimer = null;
-const SOURCE = 'https://loremflickr.com/720/720/';
+const { Module } = require("../main");
+const axios = require("axios");
 
-async function setProfilePic(bot, buffer) {
-  if (bot.setProfilePicture) {
-    await bot.setProfilePicture(buffer);
-  } else if (bot.client?.updateProfilePicture) {
-    const jid = bot.user?.id || bot.client.user?.id;
-    await bot.client.updateProfilePicture(jid, buffer);
-  }
-}
+let autoDpEnabled = false;
+let intervalId = null;
 
-async function fetchImageBuffer() {
-  const res = await fetch(SOURCE, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
-}
+// New image source
+const IMAGE_URL = "https://loremflickr.com/720/720/";
 
-async function rotate(bot) {
+async function fetchImage() {
   try {
-    const buf = await fetchImageBuffer();
-    await setProfilePic(bot, buf);
-    console.log('[autodp] profile picture updated');
-  } catch (err) {
-    console.error('[autodp] error:', err.message);
+    const res = await axios.get(IMAGE_URL, { responseType: "arraybuffer" });
+    return Buffer.from(res.data, "binary");
+  } catch (e) {
+    console.error("Image fetch failed:", e);
+    throw e;
   }
 }
 
-module.exports = {
-  name: 'autodp',
-  command: ['autodp'],
-  description: 'Auto profile picture updater from LoremFlickr every 2 minutes',
-  author: 'Emmanuel',
-
-  onCommand: async ({ command, args, message, bot, reply }) => {
-    const sub = (args[0] || '').toLowerCase();
-
-    if (sub === 'on') {
-      if (!rotateTimer) {
-        rotateTimer = setInterval(() => rotate(bot), 2 * 60 * 1000);
-        await rotate(bot);
-        await reply('Autodp started.');
-      } else {
-        await reply('Autodp is already running.');
-      }
-    } else if (sub === 'off') {
-      if (rotateTimer) {
-        clearInterval(rotateTimer);
-        rotateTimer = null;
-        await reply('Autodp stopped.');
-      } else {
-        await reply('Autodp is not running.');
-      }
-    } else if (sub === 'now') {
-      await rotate(bot);
-      await reply('Profile picture updated now.');
-    } else {
-      await reply('Usage: .autodp on | off | now');
-    }
-  },
-
-  onStop: async () => {
-    if (rotateTimer) {
-      clearInterval(rotateTimer);
-      rotateTimer = null;
-    }
-    console.log('[autodp] stopped');
+async function setDp(client) {
+  try {
+    const imgBuffer = await fetchImage();
+    await client.updateProfilePicture(client.user.id, imgBuffer);
+    console.log("DP updated with random portrait image");
+  } catch (e) {
+    console.error("DP update failed:", e);
   }
-};
+}
+
+Module(
+  { pattern: "autodp", isPrivate: false, desc: "Set DP once with random portrait", type: "utility" },
+  async (message) => {
+    if (!autoDpEnabled) {
+      await setDp(message.client);
+      await message.reply("✅ DP updated with random portrait image.");
+    } else {
+      await message.reply("⚡ Auto DP is already running.");
+    }
+  }
+);
+
+Module(
+  { pattern: "autodp on", isPrivate: false, desc: "Enable auto DP every 2 min", type: "utility" },
+  async (message) => {
+    if (autoDpEnabled) return await message.reply("⚡ Auto DP is already running.");
+    autoDpEnabled = true;
+    intervalId = setInterval(() => setDp(message.client), 2 * 60 * 1000);
+    await setDp(message.client);
+    await message.reply("✅ Auto DP ENABLED. Updating every 2 minutes.");
+  }
+);
+
+Module(
+  { pattern: "autodp off", isPrivate: false, desc: "Disable auto DP", type: "utility" },
+  async (message) => {
+    autoDpEnabled = false;
+    clearInterval(intervalId);
+    await message.reply("🔇 Auto DP DISABLED.");
+  }
+);
