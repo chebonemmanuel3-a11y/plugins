@@ -1,65 +1,67 @@
-const { Module } = require("../main");
-const axios = require("axios");
+/**
+ * Auto DP Plugin for Raganork-MD
+ * Author: Emmanuel + ChatGPT
+ * Description: Automatically updates your WhatsApp DP with random nature images every few minutes.
+ */
 
-let autoDpEnabled = false;
-let intervalId = null;
+const { Module } = require('../main');
+const axios = require('axios');
 
-// ✅ Reliable image source
-const IMAGE_URL = "https://loremflickr.com/800/800/portrait";
+const INTERVAL_MS = 1000 * 60 * 10; // 10 minutes
+const IMAGE_API = 'https://picsum.photos/720/720'; // random image source (works on all servers)
 
-// Fetch image buffer from web
-async function fetchImage() {
+let enabled = false;
+let interval = null;
+
+Module({
+  pattern: 'autodp',
+  fromMe: true, // set to false if you want everyone to use it
+  desc: 'Automatically changes profile picture with random nature images.',
+}, async (m, match) => {
   try {
-    const res = await axios.get(IMAGE_URL, { responseType: "arraybuffer" });
-    return Buffer.from(res.data, "binary");
-  } catch (e) {
-    console.error("Image fetch failed:", e);
-    throw e;
-  }
-}
+    const command = (match[1] || '').trim().toLowerCase();
 
-// Set profile picture
-async function setDp(client) {
-  try {
-    const imgBuffer = await fetchImage();
-    await client.updateProfilePicture(client.user.id, imgBuffer);
-    console.log("✅ DP updated with random portrait image");
-  } catch (e) {
-    console.error("❌ DP update failed:", e.message);
-  }
-}
+    // --- Turn ON ---
+    if (command === 'on') {
+      if (enabled) return await m.send('_Auto DP already running._');
+      enabled = true;
 
-// Command: .autodp → update once
-Module(
-  { pattern: "autodp", isPrivate: false, desc: "Set DP once with random portrait", type: "utility" },
-  async (message) => {
-    if (!autoDpEnabled) {
-      await setDp(message.client);
-      await message.reply("✅ DP updated with random portrait image.");
-    } else {
-      await message.reply("⚡ Auto DP is already running.");
+      const updateDP = async () => {
+        try {
+          const res = await axios.get(IMAGE_API, { responseType: 'arraybuffer' });
+          const img = Buffer.from(res.data, 'binary');
+
+          if (m.client && typeof m.client.updateProfilePicture === 'function') {
+            await m.client.updateProfilePicture(m.user, img);
+            console.log('[autodp] ✅ DP updated from Picsum.photos');
+          } else {
+            console.warn('[autodp] ❌ updateProfilePicture not available');
+          }
+        } catch (err) {
+          console.error('[autodp] Error fetching/updating DP:', err.message);
+        }
+      };
+
+      // Run once immediately, then on interval
+      await updateDP();
+      interval = setInterval(updateDP, INTERVAL_MS);
+      await m.send('_🌿 Auto DP started — updates every 10 minutes._');
+      return;
     }
-  }
-);
 
-// Command: .autodp on → start auto updates
-Module(
-  { pattern: "autodp on", isPrivate: false, desc: "Enable auto DP every 2 min", type: "utility" },
-  async (message) => {
-    if (autoDpEnabled) return await message.reply("⚡ Auto DP is already running.");
-    autoDpEnabled = true;
-    intervalId = setInterval(() => setDp(message.client), 2 * 60 * 1000);
-    await setDp(message.client);
-    await message.reply("✅ Auto DP ENABLED. Updating every 2 minutes.");
-  }
-);
+    // --- Turn OFF ---
+    if (command === 'off') {
+      if (!enabled) return await m.send('_Auto DP not active._');
+      clearInterval(interval);
+      enabled = false;
+      await m.send('_🛑 Auto DP stopped._');
+      return;
+    }
 
-// Command: .autodp off → stop auto updates
-Module(
-  { pattern: "autodp off", isPrivate: false, desc: "Disable auto DP", type: "utility" },
-  async (message) => {
-    autoDpEnabled = false;
-    clearInterval(intervalId);
-    await message.reply("🔇 Auto DP DISABLED.");
+    // --- Help message ---
+    await m.send('*Usage:* `.autodp on` to start\n`.autodp off` to stop');
+  } catch (err) {
+    console.error('[autodp] Fatal error:', err);
+    await m.send('_Error running Auto DP plugin._');
   }
-);
+});
