@@ -1,289 +1,90 @@
-Const { Module } = require('../main');
-const axios = require('axios');
-const botConfig = require("../config");
-const isFromMe = botConfig.MODE === "public" ? false : true;
+// vo_reply.js — View Once Extractor triggered by Reply (.vo)
 
-let pendingSpotify = {};
+const { Module } = require('../main');
+const botConfig = require("../config"); 
+
+// --- Configuration Setup ---
+// Get the JID for sending the private message (Owner's full JID)
+// Adjust this line if your owner JID is stored differently
+const OWNER_JID = botConfig.OWNER_JID || "YOUR_OWNER_NUMBER@s.whatsapp.net"; 
+
+// Helper to check if the sender is authorized (Security check)
+function isSudo(senderId) {
+    const SUDO_NUMBERS = botConfig.SUDO ? botConfig.SUDO.split(',').map(s => s.trim()) : [];
+    const senderNumber = senderId.split('@')[0];
+    return SUDO_NUMBERS.includes(senderNumber);
+}
+// ----------------------------
+
 
 Module({
-    pattern: 'spotify ?(.*)',
-    fromMe: isFromMe,
-    desc: 'Search & Download Spotify songs',
-    type: 'downloader'
-}, async (message, match) => {
-    let query = match[1]?.trim();
-
-    
-    if (!query && message.reply_message) {
-        query = message.reply_message.text?.trim();
-    }
-
-    if (!query) return await message.sendReply('_Give me a song name or Spotify URL!_');
-
-   
-    if (query.startsWith('http') && query.includes('spotify.com/track/')) {
-        try {
-            const waitMsg = await message.sendReply('⬇️ Fetching track info...');
-            const res = await axios.get(`https://jerrycoder.oggyapi.workers.dev/dspotify?url=${encodeURIComponent(query)}`);
-
-            if (!res.data.status || !res.data.download_link) {
-                return await message.edit('_Failed to get download link!_', message.jid, waitMsg.key);
-            }
-
-            const track = res.data;
-            await message.edit(`⬇️ Downloading: *${track.title}* - ${track.artist}`, message.jid, waitMsg.key);
-
-            const response = await axios.get(track.download_link, { responseType: 'stream' });
-
-            await message.sendMessage(
-                { stream: response.data },
-                "audio",
-                {
-                    mimetype: "audio/mpeg",
-                    quoted: message.data,
-                    fileName: `${track.title} - ${track.artist}.mp3`
-                }
-            );
-
-            // --- PDF/Document Receipt Generation for Direct URL ---
-            const receiptContent = `
-🎶 Spotify Download Receipt 🎶
-Title: ${track.title}
-Artist: ${track.artist}
-URL: ${query}
-Download Time: ${new Date().toLocaleString()}
-            `;
-            
-            await message.sendMessage(
-                { text: receiptContent }, 
-                "document", 
-                { 
-                    mimetype: "application/pdf", 
-                    quoted: message.data,
-                    fileName: `${track.title} - ${track.artist} - Info.pdf` 
-                }
-            );
-            // ----------------------------------------------------
-
-
-            await message.edit(`✅ Success: *${track.title}* - ${track.artist}`, message.jid, waitMsg.key);
-
-        } catch (err) {
-            console.error(err);
-            return await message.sendReply('_Error downloading track!_');
-        }
-        return;
-    }
-
-    
-    try {
-        const waitMsg = await message.sendReply(`_Searching for:_ *${query}*`);
-
-        const res = await axios.get(`https://jerrycoder.oggyapi.workers.dev/spotify?search=${encodeURIComponent(query)}`);
-        if (!res.data.tracks || res.data.tracks.length === 0) {
-            return await message.edit('_No tracks found!_', message.jid, waitMsg.key);
-        }
-
-        const results = res.data.tracks.slice(0, 8);
-let list = results.map((t, i) =>
-    `*${i + 1}. ${t.trackName}*\n_by ${t.artist} • ${t.durationMs}_`
-).join("\n\n");
-
-await message.edit(
-    `🎵 *Search results for:* _"${query}"_\n\n${list}\n\n_Reply with a number (1–${results.length}) to download_`,
-    message.jid,
-    waitMsg.key
-);
-
-pendingSpotify[message.sender] = { key: waitMsg.key, results };
-
-    } catch (err) {
-        console.error(err);
-        return await message.sendReply('_Error fetching search results!_');
-    }
-});
-
-Module({
-    on: 'text',
-    fromMe: false
+    pattern: 'vo',
+    fromMe: false, // Can be triggered by anyone
+    desc: 'Extracts and sends View Once media (Image/Video) from the replied message to the Owner\'s DM.',
+    type: 'utility'
 }, async (message) => {
-    const userState = pendingSpotify[message.sender];
-    if (!userState) return;
+    
+    const client = message.client;
+    
+    // ⚠️ Security Check: Only authorized users can execute this command
+    if (!isSudo(message.sender)) {
+        return await message.sendReply('❌ This command is restricted to bot owners (SUDO users).');
+    }
 
-    const selected = parseInt(message.message.trim());
-    if (isNaN(selected) || selected < 1 || selected > userState.results.length) return;
+    // 1. Check if the command is a reply to a message
+    if (!message.reply_message) {
+        return await message.sendReply('❌ Reply to a *View Once* message with *.vo* to extract the media.');
+    }
+    
+    // 2. Check if the replied message is a View Once wrapper
+    const repliedMsg = message.reply_message;
+    if (repliedMsg.mtype !== 'viewOnceMessage') {
+        return await message.sendReply('❌ The replied message is not a *View Once* message.');
+    }
+    
+    // 3. Access the inner media message
+    const innerMessage = repliedMsg.message.viewOnceMessage.message;
+    
+    let mediaType;
+    if (innerMessage.imageMessage) {
+        mediaType = 'image';
+    } else if (innerMessage.videoMessage) {
+        mediaType = 'video';
+    } else {
+        return await message.sendReply('❌ The View Once message contains unsupported media (only Image/Video are supported).');
+    }
+    
+    // Get sender info from the original VO message
+    const originalSenderName = repliedMsg.pushName || "Unknown User";
+    const originalSenderJid = repliedMsg.sender;
 
-    const track = userState.results[selected - 1];
-    delete pendingSpotify[message.sender];
+    await message.sendReply(`👀 Extracting View Once ${mediaType} from ${originalSenderName}...`);
 
     try {
-        await message.edit(`⬇️ Downloading: *${track.trackName}* - ${track.artist}`, message.jid, userState.key);
-
-        const res = await axios.get(`https://jerrycoder.oggyapi.workers.dev/dspotify?url=${encodeURIComponent(track.spotifyUrl)}`);
-
-        if (!res.data.status || !res.data.download_link) {
-            return await message.edit('_Failed to fetch download link!_', message.jid, userState.key);
-        }
-
-        const dl = res.data;
-        const response = await axios.get(dl.download_link, { responseType: 'stream' });
-
-        // 1. Send the MP3 file
-        await message.sendMessage(
-            { stream: response.data },
-            "audio",
-            {
-                mimetype: "audio/mpeg",
-                quoted: message.data,
-                fileName: `${dl.title} - ${dl.artist}.mp3`
-            }
-        );
-
-        // 2. Send the PDF receipt/document with song name
-        const receiptContent = `
-🎶 Spotify Download Receipt 🎶
-
-Title: ${dl.title}
-Artist: ${dl.artist}
-URL: ${track.spotifyUrl}
-Download Time: ${new Date().toLocaleString()}
-        `;
+        // 4. Download the media buffer from the inner message object
+        const mediaBuffer = await client.downloadMediaMessage(innerMessage);
         
-        await message.sendMessage(
-            { text: receiptContent }, // Content for the document
-            "document", // Send as a file
+        // 5. Re-send the media to the OWNER_JID (Your DM)
+        const captionText = `✅ *Extracted View Once ${mediaType}*\nSent by: ${originalSenderName} (${originalSenderJid.split('@')[0]})`;
+        
+        await client.sendMessage(
+            OWNER_JID, // *** Sending to Owner's DM ***
             { 
-                mimetype: "application/pdf", // Fake the PDF mimetype
-                quoted: message.data,
-                fileName: `${dl.title} - ${dl.artist} - Info.pdf` // Use the song name for the file name
+                [mediaType]: mediaBuffer, 
+                caption: captionText,
             }
         );
 
+        // Notify the group/chat that the extraction was successful
+        await message.edit(`✅ Extracted and sent the media to your DM.`, message.jid, message.key);
 
-        await message.edit(`✅ Success: *${dl.title}* - ${dl.artist}`, message.jid, userState.key);
 
-    } catch (err) {
-        console.error(err);
-        await message.edit('_Error downloading!_', message.jid, userState.key);
+    } catch (error) {
+        console.error(`VO Reply Extractor Error for ${mediaType}:`, error);
+        await message.sendReply(`❌ Failed to extract View Once ${mediaType}. The message might have expired or the API failed.`);
     }
 });
-            const track = res.data;
-            await message.edit(`⬇️ Downloading: *${track.title}* - ${track.artist}`, message.jid, waitMsg.key);
-
-            const response = await axios.get(track.download_link, { responseType: 'stream' });
-
-            // --- MODIFIED OUTPUT ---
-            await message.sendMessage(
-                { stream: response.data },
-                "document", // Send as 'document'
-                {
-                    mimetype: "application/pdf", // Mimetype for PDF
-                    quoted: message.data,
-                    fileName: `${track.title} - ${track.artist}.pdf` // File extension is .pdf
-                }
-            );
-            // -----------------------
-
-            await message.edit(`✅ Success: *${track.title}* - ${track.artist} (Save file and rename extension to .mp3)`, message.jid, waitMsg.key);
-
-        } catch (err) {
-            console.error(err);
-            return await message.sendReply('_Error downloading track!_');
-        }
-        return;
-    }
-
-    
-    try {
-        const waitMsg = await message.sendReply(`_Searching for:_ *${query}*`);
-
-        const res = await axios.get(`${SPOTIFY_API_BASE}spotify?search=${encodeURIComponent(query)}`);
-        if (!res.data.tracks || res.data.tracks.length === 0) {
-            return await message.edit('_No tracks found!_', message.jid, waitMsg.key);
-        }
-
-        const results = res.data.tracks.slice(0, 8);
-        let list = results.map((t, i) =>
-            `*${i + 1}. ${t.trackName}*\n_by ${t.artist} • ${t.durationMs}_`
-        ).join("\n\n");
-
-        await message.edit(
-            `🎵 *Search results for:* _"${query}"_\n\n${list}\n\n_Reply with a number (1–${results.length}) to download_`,
-            message.jid,
-            waitMsg.key
-        );
-
-        pendingSpotify[message.sender] = { key: waitMsg.key, results };
-
-    } catch (err) {
-        console.error(err);
-        return await message.sendReply('_Error fetching search results!_');
-    }
-});
-
-// --- Selection Handler Module (Modified Download Logic) ---
-Module({
-    on: 'text',
-    fromMe: false
-}, async (message) => {
-    const userState = pendingSpotify[message.sender];
-    if (!userState) return;
-
-    const selected = parseInt(message.message.trim());
-    if (isNaN(selected) || selected < 1 || selected > userState.results.length) return;
-
-    const track = userState.results[selected - 1];
-    delete pendingSpotify[message.sender];
-
-    try {
-        await message.edit(`⬇️ Downloading: *${track.trackName}* - ${track.artist}`, message.jid, userState.key);
-
-        const res = await axios.get(`${SPOTIFY_API_BASE}dspotify?url=${encodeURIComponent(track.spotifyUrl)}`);
-
-        if (!res.data.status || !res.data.download_link) {
-            return await message.edit('_Failed to fetch download link!_', message.jid, userState.key);
-        }
-
-        const dl = res.data;
-        const response = await axios.get(dl.download_link, { responseType: 'stream' });
-
-        // --- MODIFIED OUTPUT ---
-        await message.sendMessage(
-            { stream: response.data },
-            "document", // Send as 'document'
-            {
-                mimetype: "application/pdf", // Mimetype for PDF
-                quoted: message.data,
-                fileName: `${dl.title} - ${dl.artist}.pdf` // File extension is .pdf
-            }
-        );
-        // -----------------------
-
-        await message.edit(`✅ Success: *${dl.title}* - ${dl.artist} (Save file and rename extension to .mp3)`, message.jid, userState.key);
-
-    } catch (err) {
-        console.error(err);
-        await message.edit('_Error downloading!_', message.jid, userState.key);
-    }
-});
-wnload (Use NEW Logic) ---
-    const trackId = getSpotifyTrackId(query);
-    if (query.startsWith('http') && trackId) {
-        try {
-            const waitMsg = await message.sendReply('⬇️ Fetching track info and downloading (High Quality)...');
-            
-            const trackInfo = await downloadTrackBySpotifyId(message, trackId, waitMsg.key);
-
-            await message.edit(`✅ Success: *${trackInfo.title}* - ${trackInfo.artist}`, message.jid, waitMsg.key);
-
-        } catch (err) {
-            console.error('Direct Download Error:', err);
-            return await message.sendReply('_Error downloading track (New API failed)!_');
-        }
-        return;
-    }
-
-    // --- Search Logic (REVERTS TO OLD, RELIABLE SEARCH API) ---
+- Search Logic (REVERTS TO OLD, RELIABLE SEARCH API) ---
     try {
         const waitMsg = await message.sendReply(`_Searching for:_ *${query}*`);
 
