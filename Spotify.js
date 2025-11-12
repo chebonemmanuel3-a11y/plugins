@@ -5,35 +5,133 @@ const isFromMe = botConfig.MODE === "public" ? false : true;
 
 let pendingSpotify = {};
 
-// --- API Endpoints ---
-const OLD_SEARCH_API = 'https://jerrycoder.oggyapi.workers.dev/spotify';
-const NEW_DOWNLOAD_API_BASE = 'https://api.spotifydown.com/download/';
+// --- API Endpoint (Reverted to reliable, low-quality service) ---
+const SPOTIFY_API_BASE = 'https://jerrycoder.oggyapi.workers.dev/';
 
-// --- Helper function to extract Spotify Track ID from URL ---
-function getSpotifyTrackId(url) {
-    // Regex to find the 22-character ID in the track URL
-    const match = url.match(/(?:track\/|t=)([a-zA-Z0-9]{22})/);
-    return match ? match[1] : null;
-}
+// --- Main SPOTIFY Command Module (Search & Direct URL) ---
+Module({
+    pattern: 'spotify ?(.*)',
+    fromMe: isFromMe,
+    desc: 'Search & Download Spotify songs (Old API, File extension is .pdf for filename preservation).',
+    type: 'downloader'
+}, async (message, match) => {
+    let query = match[1]?.trim();
 
-// --- CORE DOWNLOAD FUNCTION (Uses NEW High-Quality API) ---
-async function downloadTrackBySpotifyId(message, trackId, updateKey) {
-    
-    // 1. Get Download Link (The new 320kbps API)
-    const downloadRes = await axios.get(`${NEW_DOWNLOAD_API_BASE}${trackId}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-
-    const dl = downloadRes.data;
-
-    if (!dl.success || !dl.link) {
-        throw new Error('New API failed to provide a high-quality download link.');
+    if (!query && message.reply_message) {
+        query = message.reply_message.text?.trim();
     }
 
-    // 2. Stream the Audio File
-    await message.edit(`⬇️ Downloading: *${dl.metadata.title}* - ${dl.metadata.artist}`, message.jid, updateKey);
+    if (!query) return await message.sendReply('_Give me a song name or Spotify URL!_');
 
-    const response = await axios.get(dl.link, { 
+    // --- Direct URL Download (Reverted to original logic) ---
+    if (query.startsWith('http') && query.includes('spotify.com')) {
+        try {
+            const waitMsg = await message.sendReply('⬇️ Fetching track info...');
+            const res = await axios.get(`${SPOTIFY_API_BASE}dspotify?url=${encodeURIComponent(query)}`);
+
+            if (!res.data.status || !res.data.download_link) {
+                return await message.edit('_Failed to get download link!_', message.jid, waitMsg.key);
+            }
+
+            const track = res.data;
+            await message.edit(`⬇️ Downloading: *${track.title}* - ${track.artist}`, message.jid, waitMsg.key);
+
+            const response = await axios.get(track.download_link, { responseType: 'stream' });
+
+            // --- MODIFICATION HERE: Set mimetype to PDF and filename to .pdf ---
+            await message.sendMessage(
+                { stream: response.data },
+                "document", // Send as 'document' instead of 'audio'
+                {
+                    mimetype: "application/pdf", // Mimetype for PDF
+                    quoted: message.data,
+                    fileName: `${track.title} - ${track.artist}.pdf` // Extension is .pdf
+                }
+            );
+            // -------------------------------------------------------------------
+
+            await message.edit(`✅ Success: *${track.title}* - ${track.artist} (Save file and rename extension to .mp3)`, message.jid, waitMsg.key);
+
+        } catch (err) {
+            console.error(err);
+            return await message.sendReply('_Error downloading track!_');
+        }
+        return;
+    }
+
+    // --- Search Logic (Reverted to original logic) ---
+    try {
+        const waitMsg = await message.sendReply(`_Searching for:_ *${query}*`);
+
+        const res = await axios.get(`${SPOTIFY_API_BASE}spotify?search=${encodeURIComponent(query)}`);
+        if (!res.data.tracks || res.data.tracks.length === 0) {
+            return await message.edit('_No tracks found!_', message.jid, waitMsg.key);
+        }
+
+        const results = res.data.tracks.slice(0, 8);
+        let list = results.map((t, i) =>
+            `*${i + 1}. ${t.trackName}*\n_by ${t.artist} • ${t.durationMs}_`
+        ).join("\n\n");
+
+        await message.edit(
+            `🎵 *Search results for:* _"${query}"_\n\n${list}\n\n_Reply with a number (1–${results.length}) to download_`,
+            message.jid,
+            waitMsg.key
+        );
+
+        pendingSpotify[message.sender] = { key: waitMsg.key, results };
+
+    } catch (err) {
+        console.error(err);
+        return await message.sendReply('_Error fetching search results!_');
+    }
+});
+
+// --- Selection Handler Module (Modified Download Logic) ---
+Module({
+    on: 'text',
+    fromMe: false
+}, async (message) => {
+    const userState = pendingSpotify[message.sender];
+    if (!userState) return;
+
+    const selected = parseInt(message.message.trim());
+    if (isNaN(selected) || selected < 1 || selected > userState.results.length) return;
+
+    const track = userState.results[selected - 1];
+    delete pendingSpotify[message.sender];
+
+    try {
+        await message.edit(`⬇️ Downloading: *${track.trackName}* - ${track.artist}`, message.jid, userState.key);
+
+        const res = await axios.get(`${SPOTIFY_API_BASE}dspotify?url=${encodeURIComponent(track.spotifyUrl)}`);
+
+        if (!res.data.status || !res.data.download_link) {
+            return await message.edit('_Failed to fetch download link!_', message.jid, userState.key);
+        }
+
+        const dl = res.data;
+        const response = await axios.get(dl.download_link, { responseType: 'stream' });
+
+        // --- MODIFICATION HERE: Set mimetype to PDF and filename to .pdf ---
+        await message.sendMessage(
+            { stream: response.data },
+            "document", // Send as 'document' instead of 'audio'
+            {
+                mimetype: "application/pdf", // Mimetype for PDF
+                quoted: message.data,
+                fileName: `${dl.title} - ${dl.artist}.pdf` // Extension is .pdf
+            }
+        );
+        // -------------------------------------------------------------------
+
+        await message.edit(`✅ Success: *${dl.title}* - ${dl.artist} (Save file and rename extension to .mp3)`, message.jid, userState.key);
+
+    } catch (err) {
+        console.error(err);
+        await message.edit('_Error downloading!_', message.jid, userState.key);
+    }
+});
         responseType: 'stream',
         headers: { 'User-Agent': 'Mozilla/5.0' }
     });
