@@ -8,15 +8,14 @@ const { Module } = require('../main');
 const axios = require('axios');
 
 const INTERVAL_MS = 1000 * 60 * 10; // 10 minutes
-const IMAGE_API = 'https://picsum.photos/720/720'; // random nature image
+const IMAGE_API = 'https://picsum.photos/720/720';
 let enabled = false;
 let interval = null;
 
-// FIXED PATTERN: now captures "on" or "off"
 Module({
   pattern: 'autodp ?(.*)',
   fromMe: true,
-  desc: 'Automatically changes profile picture with random nature images.',
+  desc: 'Automatically changes your WhatsApp DP with random nature images.',
 }, async (m, match) => {
   try {
     const command = (match[1] || '').trim().toLowerCase();
@@ -25,17 +24,25 @@ Module({
       if (enabled) return await m.send('_🌿 Auto DP already running._');
       enabled = true;
 
+      const jid = m.client.user.id; // ✅ Get your bot's own JID safely
+
       const updateDP = async () => {
         try {
           const res = await axios.get(IMAGE_API, { responseType: 'arraybuffer' });
           const img = Buffer.from(res.data, 'binary');
-          await m.client.updateProfilePicture(m.user, img);
-          console.log('[autodp] ✅ DP updated from Picsum.photos');
+
+          if (jid) {
+            await m.client.updateProfilePicture(jid, img);
+            console.log('[autodp] ✅ DP updated successfully.');
+          } else {
+            console.warn('[autodp] ⚠️ No valid JID found!');
+          }
         } catch (err) {
-          console.error('[autodp] Error:', err.message);
+          console.error('[autodp] Error updating DP:', err.message);
         }
       };
 
+      // Run immediately and every 10 mins
       await updateDP();
       interval = setInterval(updateDP, INTERVAL_MS);
       await m.send('_✅ Auto DP started — updates every 10 minutes._');
@@ -50,7 +57,6 @@ Module({
       return;
     }
 
-    // If no argument provided
     await m.send('*Usage:*\n.autodp on → start auto dp\n.autodp off → stop auto dp');
   } catch (err) {
     console.error('[autodp] Fatal error:', err);
