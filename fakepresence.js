@@ -1,20 +1,20 @@
-// const { Module } = require('../main'); <-- REMOVED
-// const config = require('../config'); <-- REMOVED
-// const isPrivateBot = config.MODE !== 'public'; <-- If config is global, this may need adjustment, but we'll try removing require first.
-
-// NOTE: We assume 'Module' and 'config' (if needed) are globally available.
-// The constant below is safe as long as 'config' is available.
-const isPrivateBot = config.MODE !== 'public'; 
+// Remove all initial 'require' statements
 
 // --- State Management ---
-// Tracks which chat (jid) has an active fake status: { jid: 'typing' | 'recording' }
+// Tracks which chat (jid) has an active fake status: { jid: 'composing' | 'recording' }
 const activePresence = new Map(); 
+
+// --- Bot API Presence Types ---
+const TYPE_COMPOSE = 'composing'; // Used for typing
+const TYPE_RECORD = 'recording';  // Used for recording
+const TYPE_AVAILABLE = 'available'; // Used to clear status
 
 // --- Combined Fake Presence Module ---
 Module({
     // pattern will capture either "type" or "record" (match[1]) and "on" or "off" (match[2])
     pattern: 'fake(type|record) (on|off)', 
-    fromMe: isPrivateBot,
+    // Setting fromMe to false, assuming the bot is for public use, since config failed.
+    fromMe: false, 
     desc: 'Toggles fake typing or recording status on/off in the chat.',
     type: 'utility'
 }, async (message, match) => {
@@ -22,23 +22,26 @@ Module({
     const action = match[1]; // 'type' or 'record'
     const status = match[2]; // 'on' or 'off'
     
-    // The status string required by the bot API
-    const statusType = (action === 'type' ? 'typing' : 'recording'); 
+    // Determine the correct API string based on the command action
+    const statusType = (action === 'type' ? TYPE_COMPOSE : TYPE_RECORD); 
     
     // --- ON Logic ---
     if (status === 'on') {
         if (activePresence.has(jid)) {
             const currentStatus = activePresence.get(jid);
+            // Re-map the API string back to the command word for user feedback
+            const currentAction = (currentStatus === TYPE_COMPOSE ? 'type' : 'record');
+            
             if (currentStatus === statusType) {
                 return await message.sendReply(`⚠️ Fake ${action} is already *ON* in this chat.`);
             } else {
-                 return await message.sendReply(`❌ Cannot start fake ${action}. Please use \`*.fake${currentStatus} off*\` first.`);
+                 return await message.sendReply(`❌ Cannot start fake ${action}. Please use \`*.fake${currentAction} off*\` first.`);
             }
         }
         
         try {
-            // 1. Send the presence update (e.g., 'typing' or 'recording')
-            await message.client.sendPresenceUpdate(jid, statusType);
+            // 1. Send the presence update
+            await message.client.sendPresenceUpdate(statusType, jid);
             activePresence.set(jid, statusType);
 
             return await message.sendReply(`✅ Fake ${action} status is now *ON*.\nUse \`*.fake${action} off*\` to stop it.`);
@@ -57,12 +60,13 @@ Module({
         
         if (activePresence.get(jid) !== statusType) {
              const currentStatus = activePresence.get(jid);
-             return await message.sendReply(`❌ Cannot turn *OFF* fake ${action}. The current active status is *${currentStatus}*. Use \`*.fake${currentStatus} off*\`.`);
+             const currentAction = (currentStatus === TYPE_COMPOSE ? 'type' : 'record');
+             return await message.sendReply(`❌ Cannot turn *OFF* fake ${action}. The current active status is *${currentAction}*. Use \`*.fake${currentAction} off*\`.`);
         }
         
         try {
             // 1. Send 'available' to clear any active status
-            await message.client.sendPresenceUpdate(jid, 'available'); 
+            await message.client.sendPresenceUpdate(TYPE_AVAILABLE, jid); 
             activePresence.delete(jid);
             
             return await message.sendReply(`✅ Fake ${action} status is now *OFF*.`);
