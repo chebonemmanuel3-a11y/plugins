@@ -4,37 +4,95 @@ const { Module } = require('../main');
 const activeTTTGames = new Map();
 
 // --- Bot ID and Visuals ---
-const BOT_ID = 'BOT_AI'; // Unique identifier for the bot
-const BOT_NAME = 'RagnaBot'; // Name to display for the bot
+const BOT_ID = 'BOT_AI'; 
+const BOT_NAME = 'RagnaBot'; 
 const BOARD_SQUARES = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'];
 const PLAYER_X_ICON = '❌';
 const PLAYER_O_ICON = '⭕';
 
-// Helper to choose a random available move
-function getRandomMove(board) {
-    const availableMoves = board
-        .map((val, index) => (val === 0 ? index : -1))
-        .filter(index => index !== -1);
-    
-    if (availableMoves.length === 0) return -1;
-    
-    const randomIndex = Math.floor(Math.random() * availableMoves.length);
-    return availableMoves[randomIndex];
-}
+// --- Difficulty Constants ---
+const DIFFICULTIES = ['easy', 'medium', 'hard'];
 
 // Helper to format JID for mentions
 function mentionjid(jid) {
     return '@' + jid.split('@')[0];
 }
 
-// --- TicTacToe Game Class ---
+// --- CORE AI LOGIC ---
+
+// Helper function to check if a move at 'index' leads to a win for 'marker' (1 or 2)
+function checkWinAt(board, marker, index) {
+    const tempBoard = [...board];
+    tempBoard[index] = marker;
+
+    const winPatterns = [ 
+        [0, 1, 2], [3, 4, 5], [6, 7, 8],
+        [0, 3, 6], [1, 4, 7], [2, 5, 8],
+        [0, 4, 8], [2, 4, 6]
+    ];
+
+    for (const pattern of winPatterns) {
+        const [a, b, c] = pattern;
+        if (tempBoard[a] === marker && tempBoard[b] === marker && tempBoard[c] === marker) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Finds the optimal move based on the set difficulty
+function findBestMove(board, difficulty) {
+    const emptyIndices = board
+        .map((val, index) => (val === 0 ? index : -1))
+        .filter(index => index !== -1);
+    
+    if (emptyIndices.length === 0) return -1;
+    
+    const BOT_MARKER = 2;
+    const HUMAN_MARKER = 1;
+
+    // --- 1. HARD / MEDIUM: Check for Immediate Wins (Offense) ---
+    if (difficulty === 'hard') {
+        for (const index of emptyIndices) {
+            if (checkWinAt(board, BOT_MARKER, index)) {
+                return index; // Bot wins this turn
+            }
+        }
+    }
+
+    // --- 2. HARD / MEDIUM: Check for Immediate Losses (Defense) ---
+    if (difficulty === 'hard' || difficulty === 'medium') {
+        for (const index of emptyIndices) {
+            if (checkWinAt(board, HUMAN_MARKER, index)) {
+                return index; // Bot blocks player's win
+            }
+        }
+    }
+
+    // --- 3. HARD: Strategic Move (Corners/Center) ---
+    if (difficulty === 'hard') {
+        const center = 4;
+        if (board[center] === 0) return center; // Take center if available
+
+        const corners = [0, 2, 6, 8];
+        const availableCorners = corners.filter(index => board[index] === 0);
+        if (availableCorners.length > 0) {
+            return availableCorners[Math.floor(Math.random() * availableCorners.length)]; // Take a random corner
+        }
+    }
+
+    // --- 4. Fallback (EASY / Random) ---
+    return emptyIndices[Math.floor(Math.random() * emptyIndices.length)];
+}
+
+// --- TicTacToe Game Class (Updated Constructor) ---
 class TicTacToeGame {
-    constructor(jid, client, humanPlayerId, humanPlayerName) {
+    constructor(jid, client, humanPlayerId, humanPlayerName, difficulty) { // <-- Added difficulty
         this.jid = jid;
         this.client = client;
         this.humanId = humanPlayerId;
+        this.difficulty = difficulty; // Store the difficulty
         
-        // Human is X (Player 1), Bot is O (Player 2)
         this.players = {
             [humanPlayerId]: { id: humanPlayerId, name: humanPlayerName, icon: PLAYER_X_ICON, marker: 1, turn: true }, 
             [BOT_ID]: { id: BOT_ID, name: BOT_NAME, icon: PLAYER_O_ICON, marker: 2, turn: false }
@@ -43,7 +101,9 @@ class TicTacToeGame {
         this.isGameOver = false;
     }
 
-    // Board drawing and win/draw checks remain the same
+    // ... (drawBoard, getCurrentPlayerId, checkWin, checkDraw, endGame functions remain the same) ...
+    
+    // Board drawing helper (for brevity, keeping it defined here)
     drawBoard() {
         let boardString = '';
         for (let i = 0; i < 9; i++) {
@@ -109,20 +169,20 @@ class TicTacToeGame {
             messageText = `🛑 *GAME ENDED* by request. Final state:${messageText}`;
         }
         
-        messageText += `Type \`*.ttt start*\` to play a new game against ${BOT_NAME}.`;
+        messageText += `Type \`*.ttt start [easy/medium/hard]*\` to play a new game.`;
         
         await this.client.sendMessage(this.jid, { text: messageText, mentions });
         return { status };
     }
 
+    // Bot Move Logic (Now uses findBestMove)
     async botMove() {
-        // ... (Bot move logic remains the same) ...
         if (this.isGameOver || this.getCurrentPlayerId() !== BOT_ID) {
             return;
         }
 
         const botPlayer = this.players[BOT_ID];
-        const moveIndex = getRandomMove(this.board);
+        const moveIndex = findBestMove(this.board, this.difficulty); // <-- AI Move Here!
 
         if (moveIndex === -1) {
             return await this.endGame('draw');
@@ -145,7 +205,7 @@ class TicTacToeGame {
             const messageText = `
 ${botPlayer.icon} ${BOT_NAME} places a marker at ${moveIndex + 1}.
 Board:\n${this.drawBoard()}\n
-It is now ${this.players[this.humanId].icon} *${mentionjid(this.humanId)}*'s turn.
+It is now ${this.players[this.humanId].icon} *${mentionjid(this.humanId)}*'s turn (${this.difficulty.toUpperCase()} difficulty).
 Reply with the number *1-9* to make your move.
             `.trim();
 
@@ -153,7 +213,7 @@ Reply with the number *1-9* to make your move.
         }
     }
 
-    // Core game loop: handles the human player's move
+    // makeMove (remains the same as last revision)
     async makeMove(playerId, position) {
         const index = position - 1;
         const player = this.players[playerId];
@@ -168,10 +228,8 @@ Reply with the number *1-9* to make your move.
             return { error: `Position *${position}* is invalid or already taken.` };
         }
 
-        // 1. Make the human move
         this.board[index] = player.marker;
 
-        // 2. Check status after human move
         const winnerMarker = this.checkWin();
         const isDraw = this.checkDraw();
         
@@ -180,11 +238,9 @@ Reply with the number *1-9* to make your move.
         } else if (isDraw) {
             return await this.endGame('draw');
         } else {
-            // 3. Hand off to Bot
             this.players[playerId].turn = false;
             this.players[BOT_ID].turn = true;
             
-            // Wait a moment for bot's move to feel more natural
             setTimeout(() => this.botMove(), 1500); 
             
             return { status: 'bot_turn' };
@@ -192,11 +248,11 @@ Reply with the number *1-9* to make your move.
     }
 }
 
-// --- 1. Main TTT Command Module (.ttt start/.ttt end/.ttt board) ---
+// --- Main TTT Command Module (Updated Start Logic) ---
 Module({
     pattern: 'ttt ?(.*)',
     fromMe: false,
-    desc: 'Starts, ends, or views a Tic-Tac-Toe game.',
+    desc: 'Starts, ends, or views a Tic-Tac-Toe game. Use: .ttt start [easy/medium/hard]',
     type: 'game'
 }, async (message, match) => {
     const jid = message.jid;
@@ -205,19 +261,18 @@ Module({
     const game = activeTTTGames.get(jid);
     const argument = match[1] ? match[1].toLowerCase().trim() : '';
     
-    // --- END Command ---
+    // --- End / Board Commands (Logic remains the same) ---
     if (argument === 'end') {
         if (!game || senderId !== game.humanId) {
-            return await message.sendReply("❌ No active game with you to end. Use `*.ttt start*` to begin a new game.");
+            return await message.sendReply("❌ No active game with you to end.");
         }
         await game.endGame('manual');
         return;
     }
     
-    // --- BOARD Command ---
     if (argument === 'board') {
         if (!game || senderId !== game.humanId) {
-            return await message.sendReply("❌ No active game with you to display. Use `*.ttt start*` to begin a new game.");
+            return await message.sendReply("❌ No active game with you to display.");
         }
         const currentPlayerId = game.getCurrentPlayerId();
         const currentPlayer = game.players[currentPlayerId];
@@ -229,19 +284,26 @@ It is currently ${currentPlayer.icon} *${currentPlayer.name}*'s turn.
         return await message.client.sendMessage(jid, { text: boardMessage, mentions: [currentPlayerId] });
     }
 
-    // --- START Command ---
-    if (argument === 'start' || !argument) {
+    // --- START Command (NEW DIFFICULTY HANDLING) ---
+    if (argument.startsWith('start') || !argument) {
         if (game) {
             return await message.sendReply("❌ A game is already active! End it with `*.ttt end*` or wait your turn.");
         }
         
-        const newGame = new TicTacToeGame(jid, message.client, senderId, senderName);
+        let difficulty = 'easy';
+        // Check for difficulty in the argument string (e.g., "start hard")
+        const parts = argument.split(' ');
+        if (parts.length > 1 && DIFFICULTIES.includes(parts[1])) {
+            difficulty = parts[1];
+        }
+
+        const newGame = new TicTacToeGame(jid, message.client, senderId, senderName, difficulty); // <-- Pass difficulty
         activeTTTGames.set(jid, newGame);
 
         const starterMention = mentionjid(senderId);
 
         const initialMessage = `
-**🆚 Tic-Tac-Toe Challenge: Player vs. ${BOT_NAME}! 🤖**
+**🆚 Tic-Tac-Toe Challenge: Player vs. ${BOT_NAME} (${difficulty.toUpperCase()})! 🤖**
 *You are ${PLAYER_X_ICON}. ${BOT_NAME} is ${PLAYER_O_ICON}.*
             
 **Starting Board:**
@@ -256,10 +318,10 @@ It is ${PLAYER_X_ICON} *${starterMention}*'s turn!
     }
     
     // Invalid argument for a non-active game
-    return await message.sendReply("Welcome to Tic-Tac-Toe! Use `*.ttt start*` to begin a game, or `*.ttt end*` to stop one.");
+    return await message.sendReply("Welcome to Tic-Tac-Toe! Use `*.ttt start [easy/medium/hard]*` to begin a game.");
 });
 
-// --- 2. Move Handler Module (Listening for simple numbers) ---
+// --- Move Handler Module (Remains the same) ---
 Module({
     on: 'text',
     fromMe: false
@@ -269,23 +331,21 @@ Module({
     const game = activeTTTGames.get(jid);
     const messageContent = message.message?.trim();
     
-    // 1. Check if a game is active and it's the right player's turn
+    // Check if a game is active, human player, and their turn
     if (!game || game.isGameOver || senderId !== game.humanId || senderId !== game.getCurrentPlayerId()) {
         return;
     }
 
-    // 2. Check if the message is a number between 1 and 9
+    // Check if the message is a number between 1 and 9
     const position = parseInt(messageContent);
     if (isNaN(position) || position < 1 || position > 9) {
-        return; // Ignore if it's not a valid move number
+        return; 
     }
     
-    // 3. Process the move
+    // Process the move
     const result = await game.makeMove(senderId, position);
 
     if (result.error) {
-        // Send a reply if the move was invalid (e.g., position already taken)
         await message.sendReply(`❌ Invalid Move: ${result.error}. Try again.`);
     }
-    // If successful, the game class handles the board update/bot move.
 });
