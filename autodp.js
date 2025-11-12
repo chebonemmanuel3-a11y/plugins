@@ -1,13 +1,12 @@
 /**
  * Auto DP Plugin for Raganork-MD
- * Author: Emmanuel + ChatGPT
- * Description: Automatically updates your WhatsApp DP with random nature images every few minutes.
+ * Automatically updates your WhatsApp DP with random nature images.
  */
 
 const { Module } = require('../main');
 const axios = require('axios');
 
-const INTERVAL_MS = 1000 * 60 * 10; // 10 minutes
+const INTERVAL_MS = 1000 * 60 * 10; // every 10 minutes
 const IMAGE_API = 'https://picsum.photos/720/720';
 let enabled = false;
 let interval = null;
@@ -24,42 +23,31 @@ Module({
       if (enabled) return await m.send('_🌿 Auto DP already running._');
       enabled = true;
 
-      const jid = m.client.user.id; // ✅ Get your bot's own JID safely
+      // ✅ Try all possible JID locations safely
+      const jid =
+        (m.client.user && (m.client.user.id || m.client.user.jid)) ||
+        m.user?.id ||
+        m.user?.jid ||
+        m.sender ||
+        (await m.client.user?.id);
+
+      if (!jid) {
+        await m.send('_⚠️ Could not detect your user JID — Auto DP cannot start._');
+        console.error('[autodp] No valid JID found in message context.');
+        enabled = false;
+        return;
+      }
 
       const updateDP = async () => {
         try {
           const res = await axios.get(IMAGE_API, { responseType: 'arraybuffer' });
           const img = Buffer.from(res.data, 'binary');
-
-          if (jid) {
-            await m.client.updateProfilePicture(jid, img);
-            console.log('[autodp] ✅ DP updated successfully.');
-          } else {
-            console.warn('[autodp] ⚠️ No valid JID found!');
-          }
+          await m.client.updateProfilePicture(jid, img);
+          console.log(`[autodp] ✅ DP updated successfully for ${jid}`);
         } catch (err) {
           console.error('[autodp] Error updating DP:', err.message);
         }
       };
 
-      // Run immediately and every 10 mins
       await updateDP();
-      interval = setInterval(updateDP, INTERVAL_MS);
-      await m.send('_✅ Auto DP started — updates every 10 minutes._');
-      return;
-    }
-
-    if (command === 'off') {
-      if (!enabled) return await m.send('_Auto DP is not running._');
-      clearInterval(interval);
-      enabled = false;
-      await m.send('_🛑 Auto DP stopped._');
-      return;
-    }
-
-    await m.send('*Usage:*\n.autodp on → start auto dp\n.autodp off → stop auto dp');
-  } catch (err) {
-    console.error('[autodp] Fatal error:', err);
-    await m.send('_❌ Error running Auto DP plugin._');
-  }
-});
+      interval = setInterval(updateDP, INTERVAL
