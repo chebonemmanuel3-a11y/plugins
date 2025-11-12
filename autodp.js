@@ -1,6 +1,6 @@
 /**
  * @name AutoDP
- * @description Automatically changes the bot's profile picture daily.
+ * @description Automatically updates the bot's profile picture daily from a URL.
  * @command autodp
  * @type utility
  */
@@ -9,10 +9,11 @@ const schedule = require('node-schedule');
 const axios = require('axios');
 
 // --- Configuration ---
-// The time for the update (e.g., '0 0 * * *' = midnight every day)
+// Set the time for the update (e.g., '0 0 * * *' = midnight every day)
+// You can adjust this schedule rule: [minute] [hour] [day_of_month] [month] [day_of_week]
 const SCHEDULE_RULE = '0 0 * * *'; 
 
-// Example URL for a random image (using a dedicated high-quality, free API)
+// URL for the image to be fetched daily (can be any static or dynamic image URL)
 const IMAGE_URL = 'https://picsum.photos/500/500'; 
 // ---------------------
 
@@ -26,10 +27,10 @@ let dpJob = null;
 async function setProfilePicture(client) {
     try {
         // 1. Check if AutoDP is ON in the persistent database
-        const status = await client.db.get('autodp_status'); 
+        // NOTE: The name 'db' here assumes Raganork uses a persistent storage object called 'db'.
+        const status = await client.db.get('autodp_status') || 'off'; 
         if (status !== 'on') {
-            console.log(`[AutoDP] Job triggered but status is OFF. Skipping DP update.`);
-            return;
+            return console.log(`[AutoDP] Job triggered but status is OFF. Skipping DP update.`);
         }
 
         console.log(`[AutoDP] Fetching image from: ${IMAGE_URL}`);
@@ -39,7 +40,7 @@ async function setProfilePicture(client) {
         const imageBuffer = Buffer.from(response.data);
 
         // 3. Update the profile picture
-        // NOTE: 'client.updateProfilePicture' is a placeholder—confirm the exact method in Raganork's API.
+        // NOTE: This function is a placeholder—confirm the exact method in Raganork's API.
         await client.updateProfilePicture(client.user.id, imageBuffer); 
 
         console.log(`[AutoDP] Successfully set new profile picture at ${new Date().toLocaleTimeString()}.`);
@@ -72,6 +73,7 @@ module.exports = {
     
     // Executes when the plugin is loaded (used to restart the schedule if status is 'on')
     onLoad: async (client) => {
+        // We ensure `node-schedule` is installed first by the `package.json`
         const status = await client.db.get('autodp_status') || 'off'; // Default to 'off'
         if (status === 'on') {
             startSchedule(client);
@@ -80,7 +82,7 @@ module.exports = {
 
     // Handles the .autodp on/off commands
     execute: async (client, message, args) => {
-        if (!message.isOwner) { // Owner check is crucial for commands affecting bot state
+        if (!message.isOwner) { // Owner check
              return client.sendMessage(message.chatId, { text: '❌ This command is for the bot owner only.' }, { quoted: message });
         }
         
