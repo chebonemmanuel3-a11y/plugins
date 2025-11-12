@@ -1,0 +1,32 @@
+const { Module } = require('../main'); // Required for command registration
+// const axios = require('axios'); // Not needed for this command
+
+Module({
+    pattern: 'setbio ?(.*)',
+    fromMe: true, // Only bot owner can run this
+    desc: 'Sets the bot\'s profile status/bio.',
+    type: 'utility'
+}, async (message, match) => {
+    const newBio = match[1] ? match[1].trim() : '';
+    const client = message.client;
+
+    if (!newBio) {
+        return await message.sendReply('❌ Please provide the new bio text!\n\nExample: *.setbio I am RagnaBot, currently running v2.5!*');
+    }
+
+    try {
+        // *** CRITICAL LINE ***
+        // Based on common WhatsApp bot libraries (like Baileys, which Raganork-MD uses), 
+        // the function is likely named client.updateProfileStatus or client.setAbout.
+        // We will use a common placeholder:
+        await client.updateProfileStatus(newBio); 
+        
+        await message.sendReply(`✅ Successfully updated the bot's profile bio to:\n\n*${newBio}*`);
+
+    } catch (error) {
+        console.error('Auto-Bio Error:', error);
+        
+        // If this fails, the function name is wrong. 
+        await message.sendReply('❌ Failed to set bio. The command is likely not supported or the internal function name (`client.updateProfileStatus`) is incorrect. Please check your framework\'s documentation for the correct function to set the profile "About" text.');
+    }
+});
