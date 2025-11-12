@@ -1,14 +1,14 @@
-const { Module } = require('../main');
-const config = require require('../config');
-const isPrivateBot = config.MODE !== 'public';
+// const { Module } = require('../main'); <-- REMOVED
+// const config = require('../config'); <-- REMOVED
+// const isPrivateBot = config.MODE !== 'public'; <-- If config is global, this may need adjustment, but we'll try removing require first.
+
+// NOTE: We assume 'Module' and 'config' (if needed) are globally available.
+// The constant below is safe as long as 'config' is available.
+const isPrivateBot = config.MODE !== 'public'; 
 
 // --- State Management ---
 // Tracks which chat (jid) has an active fake status: { jid: 'typing' | 'recording' }
 const activePresence = new Map(); 
-
-/*
-NOTE: client.sendPresenceUpdate is the placeholder API function.
-*/
 
 // --- Combined Fake Presence Module ---
 Module({
@@ -28,7 +28,6 @@ Module({
     // --- ON Logic ---
     if (status === 'on') {
         if (activePresence.has(jid)) {
-            // Block attempt to turn on when another status is already active
             const currentStatus = activePresence.get(jid);
             if (currentStatus === statusType) {
                 return await message.sendReply(`⚠️ Fake ${action} is already *ON* in this chat.`);
@@ -40,15 +39,13 @@ Module({
         try {
             // 1. Send the presence update (e.g., 'typing' or 'recording')
             await message.client.sendPresenceUpdate(jid, statusType);
-            
-            // 2. Update state map
             activePresence.set(jid, statusType);
 
             return await message.sendReply(`✅ Fake ${action} status is now *ON*.\nUse \`*.fake${action} off*\` to stop it.`);
 
         } catch (error) {
             console.error(`Error sending fake ${action} presence:`, error);
-            return await message.sendReply(`❌ Failed to send fake ${action} status. Check API implementation.`);
+            return await message.sendReply(`❌ Failed to send fake ${action} status.`);
         }
     } 
 
@@ -59,7 +56,6 @@ Module({
         }
         
         if (activePresence.get(jid) !== statusType) {
-             // Block turning off the wrong status
              const currentStatus = activePresence.get(jid);
              return await message.sendReply(`❌ Cannot turn *OFF* fake ${action}. The current active status is *${currentStatus}*. Use \`*.fake${currentStatus} off*\`.`);
         }
@@ -67,8 +63,6 @@ Module({
         try {
             // 1. Send 'available' to clear any active status
             await message.client.sendPresenceUpdate(jid, 'available'); 
-            
-            // 2. Clear state map
             activePresence.delete(jid);
             
             return await message.sendReply(`✅ Fake ${action} status is now *OFF*.`);
