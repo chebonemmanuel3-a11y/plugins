@@ -1,7 +1,4 @@
-// autobio.js — Auto Bio plugin for Raganork-MD
-// Fetches random cool bios/quotes from the internet and updates WhatsApp "About" automatically.
-
-let { Module } = require('../main')
+const { Module } = require('../main')
 const axios = require('axios')
 
 const INTERVAL_MS = 1000 * 60 * 10 // change every 10 minutes
