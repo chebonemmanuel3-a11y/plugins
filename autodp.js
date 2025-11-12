@@ -20,16 +20,19 @@ Module({
     const command = (match[1] || '').trim().toLowerCase();
 
     if (command === 'on') {
-      if (enabled) return await m.send('_🌿 Auto DP already running._');
+      if (enabled) {
+        await m.send('_🌿 Auto DP already running._');
+        return;
+      }
       enabled = true;
 
-      // ✅ Try all possible JID locations safely
+      // ✅ Detect JID safely
       const jid =
-        (m.client.user && (m.client.user.id || m.client.user.jid)) ||
-        m.user?.id ||
-        m.user?.jid ||
-        m.sender ||
-        (await m.client.user?.id);
+        (m.client?.user?.id ||
+         m.client?.user?.jid ||
+         m.user?.id ||
+         m.user?.jid ||
+         m.sender) ?? null;
 
       if (!jid) {
         await m.send('_⚠️ Could not detect your user JID — Auto DP cannot start._');
@@ -50,4 +53,25 @@ Module({
       };
 
       await updateDP();
-      interval = setInterval(updateDP, INTERVAL
+      interval = setInterval(updateDP, INTERVAL_MS);
+      await m.send('_✅ Auto DP started — updates every 10 minutes._');
+      return;
+    }
+
+    if (command === 'off') {
+      if (!enabled) {
+        await m.send('_Auto DP is not running._');
+        return;
+      }
+      clearInterval(interval);
+      enabled = false;
+      await m.send('_🛑 Auto DP stopped._');
+      return;
+    }
+
+    await m.send('*Usage:*\n.autodp on → start auto dp\n.autodp off → stop auto dp');
+  } catch (err) {
+    console.error('[autodp] Fatal error:', err);
+    await m.send('_❌ Error running Auto DP plugin._');
+  }
+});
