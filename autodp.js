@@ -4,9 +4,10 @@ const axios = require("axios");
 let autoDpEnabled = false;
 let intervalId = null;
 
-// New image source
-const IMAGE_URL = "https://loremflickr.com/720/720/";
+// ✅ Reliable image source
+const IMAGE_URL = "https://loremflickr.com/800/800/portrait";
 
+// Fetch image buffer from web
 async function fetchImage() {
   try {
     const res = await axios.get(IMAGE_URL, { responseType: "arraybuffer" });
@@ -17,16 +18,18 @@ async function fetchImage() {
   }
 }
 
+// Set profile picture
 async function setDp(client) {
   try {
     const imgBuffer = await fetchImage();
     await client.updateProfilePicture(client.user.id, imgBuffer);
-    console.log("DP updated with random portrait image");
+    console.log("✅ DP updated with random portrait image");
   } catch (e) {
-    console.error("DP update failed:", e);
+    console.error("❌ DP update failed:", e.message);
   }
 }
 
+// Command: .autodp → update once
 Module(
   { pattern: "autodp", isPrivate: false, desc: "Set DP once with random portrait", type: "utility" },
   async (message) => {
@@ -39,6 +42,7 @@ Module(
   }
 );
 
+// Command: .autodp on → start auto updates
 Module(
   { pattern: "autodp on", isPrivate: false, desc: "Enable auto DP every 2 min", type: "utility" },
   async (message) => {
@@ -50,6 +54,7 @@ Module(
   }
 );
 
+// Command: .autodp off → stop auto updates
 Module(
   { pattern: "autodp off", isPrivate: false, desc: "Disable auto DP", type: "utility" },
   async (message) => {
