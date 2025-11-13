@@ -1,10 +1,11 @@
-const { Module } = require('../main');
+const { Module, jidNormalizedUser } = require('../main'); // Correct way to import
 const config = require("../config");
-const { jidNormalizedUser } = require("@adiwajshing/baileys");
+const axios = require('axios');
+const isPrivateBot = config.MODE !== 'public';
 
 Module({
     pattern: 'whois ?(.*)',
-    fromMe: false, // Can be used by anyone
+    fromMe: isPrivateBot, // Use the config variable
     desc: 'Fetches profile information for a user.',
     type: 'utility'
 }, async (message, match) => {
@@ -31,6 +32,7 @@ Module({
 
     // Ensure the JID is valid before proceeding
     try {
+        // Use the jidNormalizedUser function imported from main
         jid = jidNormalizedUser(jid);
     } catch (e) {
         return await message.sendReply("Invalid user ID. Please reply to a user, tag them, or provide their phone number.");
@@ -44,7 +46,6 @@ Module({
         const status = await message.client.fetchStatus(jid);
         
         // Get the name associated with the user
-        // This often just returns the phone number if not in contacts
         const userInfo = await message.client.getContactInfo(jid);
         const name = userInfo.name || userInfo.notify || userInfo.short || jid.split('@')[0];
 
