@@ -1,92 +1,82 @@
-const { Module } = require("../main");
-const config = require("../config");
-const { setVar } = require("./manage");
-const axios = require("axios");
+const { Module } = require('../main');
+const axios = require('axios');
+const config = require('../config');
 
-// --- Configuration (Hardcoded Key) ---
+// --- Configuration (Uses hardcoded key from the other file) ---
 const GEMINI_API_KEY = "AIzaSyCQjQ-Ln7UlAcqs6Ok5uJcsX2-R2YeRkWc"; 
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
-const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
 
-// Models listed in fallback order.
-const models = [
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-1.5-flash",
-  "gemma-3-12b-it",
-];
+// --- System Instruction for Summarization ---
+const SYSTEM_PROMPT = "You are an expert summarization tool. Analyze the following text and provide a concise, structured summary using 2-3 bullet points. Do not include any introductory phrases.";
+const MIN_TEXT_LENGTH = 30; // Minimum length required for summarization
 
-// --- State Management ---
-const chatbotStates = new Map();
-const chatContexts = new Map();
-const modelStates = new Map();
+// --- Command Module Definition (.sam) ---
+Module({
+    pattern: 'sam',
+    fromMe: false,
+    desc: 'Summarizes a replied-to message using Gemini AI.',
+    type: 'utility'
+}, async (message) => {
+    
+    // 1. Check if the command is a reply to a message
+    if (!message.reply_message || !message.reply_message.text) {
+        return await message.sendReply('❌ Please reply to the text message you wish to summarize with *.sam*.');
+    }
+    
+    const textToSummarize = message.reply_message.text.trim();
 
-// --- MODIFIED SYSTEM PROMPT ---
-let globalSystemPrompt =
-  "You are a brief, helpful, and conversational AI assistant. Respond to the user's message with a single, short sentence. Do not use markdown (like bold or italics).";
-
-// --- Helper Functions ---
-
-async function initChatbotData() {
-  try {
-    const chatbotData = config.CHATBOT || "";
-    if (chatbotData) {
-      const enabledChats = chatbotData.split(",").filter((jid) => jid.trim());
-      enabledChats.forEach((jid) => {
-        chatbotStates.set(jid.trim(), true);
-        modelStates.set(jid.trim(), 0); 
-      });
+    // 2. CHECK: Ensure the text is long enough for the AI
+    if (textToSummarize.length < MIN_TEXT_LENGTH) {
+        return await message.sendReply(`❌ Text is too short (${textToSummarize.length} chars). Please reply to a message with at least ${MIN_TEXT_LENGTH} characters for summarization.`);
     }
 
-    const systemPrompt = config.CHATBOT_SYSTEM_PROMPT;
-    if (systemPrompt) {
-      globalSystemPrompt = systemPrompt;
+    if (!GEMINI_API_KEY) {
+        return await message.sendReply('_❌ API Key is not available. Cannot summarize._');
     }
-  } catch (error) {
-    console.error("Error initializing chatbot data:", error);
-  }
-}
 
-async function saveChatbotData() {
-  try {
-    const enabledChats = [];
-    for (const [jid, enabled] of chatbotStates.entries()) {
-      if (enabled) {
-        enabledChats.push(jid);
-      }
+    await message.sendReply('🧠 Summarizing text... this may take a moment.');
+
+    try {
+        // Construct the parts array for the API call
+        const userPrompt = `Summarize this text: """${textToSummarize}"""`;
+
+        const payload = {
+            contents: [{ parts: [{ text: userPrompt }] }],
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            generationConfig: {
+                maxOutputTokens: 250 // Allow enough tokens for a detailed summary
+            }
+        };
+
+        // --- API Call with Retries ---
+        let response;
+        for (let i = 0; i < 3; i++) {
+            try {
+                response = await axios.post(API_URL, payload, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 15000,
+                });
+                break;
+            } catch (error) {
+                if (i === 2) throw error;
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+            }
+        }
+        
+        const result = response.data;
+        const summaryText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (summaryText) {
+            await message.sendReply(`*📝 Summary:*\n---\n${summaryText.trim()}`);
+        } else {
+            await message.sendReply("_❌ AI failed to generate a summary. Try a different text._");
+        }
+
+    } catch (e) {
+        console.error("Summarization API Error:", e.message);
+        await message.sendReply("_❌ Network or API error occurred during summarization. Try again._");
     }
-    await setVar("CHATBOT", enabledChats.join(","));
-  } catch (error) {
-    console.error("Error saving chatbot data:", error);
-  }
-}
-
-async function saveSystemPrompt(prompt) {
-  try {
-    globalSystemPrompt = prompt;
-    await setVar("CHATBOT_SYSTEM_PROMPT", prompt);
-  } catch (error) {
-    console.error("Error saving system prompt:", error);
-  }
-}
-
-async function imageToGenerativePart(imageBuffer) {
-  try {
-    const data = imageBuffer.toString("base64");
-    return {
-      inlineData: {
-        mimeType: "image/jpeg",
-        data: data,
-      },
-    };
-  } catch (error) {
-    console.error("Error processing image:", error.message);
-    return null;
-  }
-}
-
+});
 async function getAIResponse(message, chatJid, imageBuffer = null) {
   const apiKey = config.GEMINI_API_KEY;
   if (!apiKey) {
