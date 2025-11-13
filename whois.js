@@ -1,84 +1,199 @@
-const { Module, jidNormalizedUser } = require('../main'); // Correct way to import
-const config = require("../config");
+const { Module } = require('../main');
+const config = require('../config');
 const axios = require('axios');
+
+// Helper: Check if user is admin (for use in other plugins)
+async function isUserAdmin(message, userJid) {
+    if (!message.isGroup) return false;
+    try {
+        const groupMetadata = await message.client.groupMetadata(message.jid);
+        const participant = groupMetadata.participants.find(p => p.id === userJid);
+        return participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
+    } catch (error) {
+        return false;
+    }
+}
+
 const isPrivateBot = config.MODE !== 'public';
 
 Module({
     pattern: 'whois ?(.*)',
-    fromMe: isPrivateBot, // Use the config variable
-    desc: 'Fetches profile information for a user.',
+    fromMe: isPrivateBot,
+    desc: 'Get detailed user information',
     type: 'utility'
 }, async (message, match) => {
-
-    let jid;
-
-    // Check if the command is a reply
-    if (message.reply_message) {
-        jid = message.reply_message.sender;
-    } 
-    // Check if a user is mentioned
-    else if (message.mention.length > 0) {
-        jid = message.mention[0];
-    } 
-    // Check if a JID/number is provided in the command
-    else if (match[1]) {
-        let text = match[1].replace(/[^0-9]/g, ''); // Clean the input
-        jid = text + '@s.whatsapp.net';
-    } 
-    // If no target, check the user who sent the command
-    else {
-        jid = message.sender;
-    }
-
-    // Ensure the JID is valid before proceeding
     try {
-        // Use the jidNormalizedUser function imported from main
-        jid = jidNormalizedUser(jid);
-    } catch (e) {
-        return await message.sendReply("Invalid user ID. Please reply to a user, tag them, or provide their phone number.");
-    }
+        let userJid;
+        let userName = 'Unknown';
+        let userStatus = 'Not available';
+        let profilePicUrl = null;
+        let phoneNumber = 'Unknown';
+        let groupRole = 'Member';
 
-    try {
-        // Fetch the profile picture URL
-        const ppUrl = await message.client.profilePictureUrl(jid, 'image');
+        if (message.reply_message && message.reply_message.jid) {
+            userJid = message.reply_message.jid;
+        } else if (match[1] && match[1].trim()) {
+            let input = match[1].trim();
+                        
+            if (input.includes('@')) {
+                // Handle mentions within the input text
+                const mentions = message.message.match(/@(\d+)/g);
+                if (mentions && mentions.length > 0) {
+                    input = mentions[0].replace('@', '');
+                } else {
+                    input = input.replace('@', '');
+                }
+            }
+                        
+            if (input.includes('@s.whatsapp.net')) {
+                userJid = input;
+            } else if (/^\d+$/.test(input)) {
+                userJid = input + '@s.whatsapp.net';
+            } else {
+                const numberMatch = input.match(/\d+/);
+                if (numberMatch) {
+                    userJid = numberMatch[0] + '@s.whatsapp.net';
+                } else {
+                    return await message.sendReply('❌ Invalid input! Please provide a valid phone number or reply to a message.\n\n*Usage:*\n• .whois - Your own info\n• .whois 910000000000 - Someone\'s info\n• Reply to a message + `.whois`');
+                }
+            }
+        } else {
+            userJid = message.sender;
+        }
 
-        // Fetch the "About" (status)
-        const status = await message.client.fetchStatus(jid);
+        if (!userJid) {
+            return await message.sendReply('❌ Unable to identify user! Please try one of these methods:\n\n*Usage:*\n• .whois - Your own info\n• .whois 910000000000 - Get someone\'s info\n• Reply to a message + `.whois`\n• Mention someone + `.whois @username`');
+        }
+
+        userJid = userJid.replace('@c.us', '@s.whatsapp.net');
+                
+        const loadingMsg = await message.sendReply('🔍 Getting user information...');
+        phoneNumber = userJid.replace('@s.whatsapp.net', '');
+
+        try {
+            const userDetails = await message.client.onWhatsApp(userJid);
+            if (!userDetails || userDetails.length === 0) {
+                return await message.sendReply('❌ User not found on WhatsApp!');
+            }
+        } catch (error) {
+            // Ignore if not supported
+        }
+
+        try {
+            profilePicUrl = await message.client.profilePictureUrl(userJid, 'image');
+        } catch (error) {
+            // Profile pic not available
+        }
+
+        // 1. If it's a reply, get name from reply_message
+        if (message.reply_message && message.reply_message.jid === userJid) {
+            if (message.reply_message.senderName) {
+                userName = message.reply_message.senderName;
+            }
+        }
         
-        // Get the name associated with the user
-        const userInfo = await message.client.getContactInfo(jid);
-        const name = userInfo.name || userInfo.notify || userInfo.short || jid.split('@')[0];
+        // 2. Try group participant name
+        if (message.isGroup && userName === 'Unknown') {
+            try {
+                const groupMetadata = await message.client.groupMetadata(message.jid);
+                const participant = groupMetadata.participants.find(p => p.id === userJid);
+                if (participant) {
+                    userName = participant.notify || participant.name || participant.short || userName;
+                    if (participant.admin === 'superadmin') groupRole = 'Super Admin';
+                    else if (participant.admin === 'admin') groupRole = 'Admin';
+                }
+            } catch (error) {
+                console.log('Group metadata error:', error);
+            }
+        }
 
-        let caption = `*👤 User Information*\n\n`;
-        caption += `*Name:* ${name}\n`;
-        caption += `*About:* ${status.status || '_No about status set._'}\n`;
-        caption += `*JID:* ${jid}`;
+        // 3. If it's own info, use senderName
+        if (userJid === message.sender && message.senderName && userName === 'Unknown') {
+            userName = message.senderName;
+        }
 
-        // Send the profile picture with the info as a caption
-        await message.sendReply(
-            { url: ppUrl }, 
-            { caption: caption, quoted: message.data }, 
-            'image'
-        );
+        // 4. Try business profile
+        if (userName === 'Unknown') {
+            try {
+                const businessProfile = await message.client.getBusinessProfile(userJid);
+                if (businessProfile && businessProfile.business_name) {
+                    userName = businessProfile.business_name;
+                }
+            } catch (error) {
+                // Business profile not available
+            }
+        }
+
+        // 5. WhatsApp lookup notify
+        if (userName === 'Unknown') {
+            try {
+                const [info] = await message.client.onWhatsApp(userJid);
+                if (info && info.notify) userName = info.notify;
+            } catch (error) {
+                // WhatsApp lookup failed
+            }
+        }
+
+        try {
+            const status = await message.client.fetchStatus(userJid);
+            if (status && status.status) userStatus = status.status;
+        } catch (error) {
+            // Status not available
+        }
+
+        let formattedNumber = (phoneNumber !== 'Unknown' && phoneNumber.length > 5)
+            ? (phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`)
+            : phoneNumber;
+
+        let infoMessage = '📋 User Information\n';
+        infoMessage += '━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+        infoMessage += `• *Number:* ${formattedNumber}\n`;
+        infoMessage += `• *Name:* ${userName}\n`;
+        infoMessage += `• *About:* ${userStatus !== 'Not available' ? userStatus : '_Status not visible_'}\n`;
+        if (message.isGroup) infoMessage += `• *Group Role:* ${groupRole}\n`;
+        infoMessage += `• *JID:* \`${userJid}\`\n`;
+        infoMessage += '━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+                
+        // FIXED: Better context message
+        if (userJid === message.sender) {
+            infoMessage += '📋 Note: This is your own profile information';
+        } else if (message.reply_message) {
+            infoMessage += '📋 Info retrieved from replied message';
+        } else {
+            infoMessage += `📋 _Retrieved at: ${new Date().toLocaleString()}_`;
+        }
+
+        // Add the branding line
+        const branding = "\n\n_Powered by intirtualemma_";
+
+        if (profilePicUrl) {
+            try {
+                const response = await axios.get(profilePicUrl, { 
+                    responseType: 'stream', 
+                    timeout: 10000,
+                    headers: {
+                        'User-Agent': 'WhatsApp/2.2108.8 Mozilla/5.0'
+                    }
+                });
+                                
+                await message.client.sendMessage(message.jid, {
+                    image: { stream: response.data },
+                    caption: infoMessage + branding // Branding added here
+                });
+            } catch (error) {
+                console.log('Profile picture download error:', error);
+                infoMessage += '\n\n📷 Profile Picture: Failed to load';
+                await message.sendReply(infoMessage + branding); // Branding added here
+            }
+        } else {
+            infoMessage += '\n\n📷 Profile Picture: Not available';
+            await message.sendReply(infoMessage + branding); // Branding added here
+        }
 
     } catch (error) {
-        console.error("Whois Error:", error);
-
-        // Fallback if the profile picture fetch fails (e.g., user has no DP)
-        try {
-            const status = await message.client.fetchStatus(jid);
-            const userInfo = await message.client.getContactInfo(jid);
-            const name = userInfo.name || userInfo.notify || userInfo.short || jid.split('@')[0];
-
-            let caption = `*👤 User Information*\n\n`;
-            caption += `*Name:* ${name}\n`;
-            caption += `*About:* ${status.status || '_No about status set._'}\n`;
-            caption += `*JID:* ${jid}\n\n`;
-            caption += `_Could not fetch profile picture (it may be private or not set)._`;
-            
-            await message.sendReply(caption);
-        } catch (e) {
-            await message.sendReply("❌ Could not retrieve information for this user.");
-        }
+        console.error('Whois plugin error:', error);
+        await message.sendReply('❌ An error occurred while getting user information. Please try again.\n\n_Powered by intirtualemma_');
     }
 });
+
+module.exports = { isUserAdmin };
