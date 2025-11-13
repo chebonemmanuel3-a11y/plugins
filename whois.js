@@ -54,7 +54,7 @@ Module({
                 if (numberMatch) {
                     userJid = numberMatch[0] + '@s.whatsapp.net';
                 } else {
-                    return await message.sendReply('❌ Invalid input! Please provide a valid phone number or reply to a message.\n\n*Usage:*\n• .whois - Your own info\n• .whois 910000000000 - Someone\'s info\n• Reply to a message + `.whois`');
+                    return await message.sendReply('.\n\n*Usage:*\n• .whois - Your own info\n• .whois 910000000000 - Someone\'s info\n• Reply to a message + `.whois`');
                 }
             }
         } else {
