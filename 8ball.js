@@ -35,7 +35,7 @@ const responses = [
 Module(
     {
         pattern: "8ball(.*)",
-        fromMe: true, // Only responds to messages from the bot's owner
+        fromMe: true,
         desc: "Ask the Magic 8-Ball a yes/no question.",
         usage: '.8ball <your question>?',
     },
@@ -47,18 +47,27 @@ Module(
         }
         
         // 1. Send an initial 'shaking' message
-        const shakingMessage = await message.sendReply("🔮 *Shaking the Magic 8-Ball...*");
+        const waitingMessage = await message.sendReply("🔮 *Shaking the Magic 8-Ball...*");
+        
+        // 2. Safely extract the message key for editing
+        // This is the critical fix: We check for key/id properties that are usually present.
+        const messageKey = waitingMessage?.key || waitingMessage?.id; 
 
-        // 2. Select a random response
+        // 3. Select a random response
         const randomIndex = Math.floor(Math.random() * responses.length);
         const answer = responses[randomIndex];
         
-        // 3. Format the final reply
+        // 4. Format the final reply
         const finalReply = 
             `*You asked:* ${question}\n\n` +
             `🎱 *The Magic 8-Ball says:* **${answer}**`;
         
-        // 4. Edit the shaking message with the result
-        return await message.edit(finalReply, shakingMessage.key);
+        // 5. Edit the message using the safely extracted key
+        if (messageKey) {
+            return await message.edit(finalReply, messageKey);
+        } else {
+            // Fallback: If we couldn't get the key, send the final reply as a new message
+            return await message.sendReply(finalReply);
+        }
     }
 );
