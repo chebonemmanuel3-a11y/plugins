@@ -24,6 +24,7 @@ Module({
     textToTranslate = parts.join(' ');
   }
 
+  // Validation
   if (!textToTranslate || !targetLang) {
     return await message.sendReply("❌ Usage:\n.trt <lang> (when replying)\n.trt <text> <lang>");
   }
@@ -32,12 +33,14 @@ Module({
     const res = await axios.get("https://api.mymemory.translated.net/get", {
       params: {
         q: textToTranslate,
-        langpair: `auto|${targetLang}`
+        langpair: `en|${targetLang}` // FIXED: using 'en' instead of 'auto'
       }
     });
 
     const translated = res.data?.responseData?.translatedText;
-    if (!translated) throw new Error("No translation returned");
+    if (!translated || translated.includes("INVALID SOURCE LANGUAGE")) {
+      throw new Error("Translation failed");
+    }
 
     await message.client.sendMessage(message.jid, {
       text: `🌐 *Translated to ${targetLang}:*\n${translated}`
