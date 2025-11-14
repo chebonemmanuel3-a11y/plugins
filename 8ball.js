@@ -40,7 +40,15 @@ Module(
         usage: '.8ball <your question>?',
     },
     async (message, match) => {
-        const question = match[1]?.trim();
+        // --- THE FIX ---
+        // We use message.text (the full message string) and strip the command prefix
+        // to safely get the question as a string, avoiding the problematic 'match[1]'.
+        const fullText = message.text || "";
+        const commandPrefix = fullText.startsWith(".8ball") ? ".8ball" : fullText.split(/\s+/)[0]; // Find actual command used
+        
+        // Extract the question string safely
+        const question = fullText.substring(commandPrefix.length).trim();
+        // --- END FIX ---
         
         if (!question || question.length < 5) {
             return await message.sendReply("🔮 **Magic 8-Ball:** Please ask me a question! \nUsage: `.8ball Will I get rich next year?`");
@@ -49,8 +57,7 @@ Module(
         // 1. Send an initial 'shaking' message
         const waitingMessage = await message.sendReply("🔮 *Shaking the Magic 8-Ball...*");
         
-        // 2. Safely extract the message key for editing
-        // This is the critical fix: We check for key/id properties that are usually present.
+        // 2. Safely extract the message key for editing (as determined in the last fix)
         const messageKey = waitingMessage?.key || waitingMessage?.id; 
 
         // 3. Select a random response
