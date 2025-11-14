@@ -60,7 +60,7 @@ async function analyzeMessage(textToAnalyze) {
     try {
         const response = await axios.post(apiUrl, payload, {
             headers: { 'Content-Type': 'application/json' },
-            timeout: 150000000, 
+            timeout: 15000, 
         });
 
         const jsonString = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -88,6 +88,35 @@ Module(
     fromMe: true, 
     desc: "Analyzes the sentiment and topic of a quoted message using Gemini AI.",
     usage: 'Reply to any message with `.analyze`',
+  },
+  async (message, match) => {
+    // Check if the user replied to a message, and if that message contains text
+    if (!message.reply_message || !message.reply_message.text) {
+        return await message.sendReply(`_Please reply to a text message with the command: \`.analyze\`_`);
+    }
+
+    const textToAnalyze = message.reply_message.text;
+
+    await message.sendReply(`_Analyzing the quoted message using structured output..._`);
+
+    const analysisResult = await analyzeMessage(textToAnalyze);
+
+    // If the result is a string, it's an error message
+    if (typeof analysisResult === 'string') {
+        return await message.sendReply(analysisResult);
+    }
+
+    // Format the successful JSON analysis into a readable WhatsApp message
+    const formattedResult = 
+        `*💬 Message Analysis (Gemini AI) 📊*\n\n` + 
+        `*📈 Sentiment:* ${analysisResult.sentiment}\n` +
+        `*💡 Topic Summary:* ${analysisResult.topicSummary}\n\n` +
+        `*🔑 Keywords:* ${analysisResult.keywords.join(', ')}\n\n` +
+        `*✍️ Suggested Response:* _${analysisResult.responseSuggestion}_`;
+
+    return await message.sendReply(formattedResult);
+  }
+);
   },
   async (message, match) => {
     // Check if the user replied to a message, and if that message contains text
