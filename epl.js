@@ -13,7 +13,7 @@ Module({
     const res = await axios.get("https://raw.githubusercontent.com/openfootball/football.json/master/2025-26/en.1.json");
     const matches = res.data.matches;
 
-    // Build a simple table by counting points (demo version)
+    // Build standings
     const standings = {};
     matches.forEach(m => {
       if (!m.score) return;
