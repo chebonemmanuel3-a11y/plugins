@@ -57,4 +57,30 @@ Module({
 }, async (message, match) => {
   const input = match[1]?.trim().toUpperCase().split(' ');
   if (!input || input.length !== 5) {
-    return await message.sendReply("❌ Please submit 5 answers like `.
+    return await message.sendReply("❌ Please submit 5 answers like `.answers A B C D E`");
+  }
+
+  const answerKey = activeQuizzes.get(message.jid);
+  if (!answerKey || answerKey.length !== 5) {
+    return await message.sendReply("❌ No quiz in progress. Start one with `.quiz`");
+  }
+
+  let score = 0;
+  let resultText = `📊 *Quiz Results:*\n\n`;
+
+  input.forEach((ans, i) => {
+    const correctLetter = String.fromCharCode(65 + answerKey[i]);
+    const isCorrect = ans === correctLetter;
+
+    resultText += `*Q${i + 1}:* ${isCorrect ? '✅ Correct' : `❌ Incorrect (Correct: ${correctLetter})`}\n`;
+    if (isCorrect) score++;
+  });
+
+  resultText += `🎯 *Your Score:* ${score}/5`;
+  activeQuizzes.delete(message.jid); // Clean up after game ends
+
+  await message.client.sendMessage(message.jid, { text: resultText });
+});
+
+// --- Optional Export ---
+module.exports = {};
