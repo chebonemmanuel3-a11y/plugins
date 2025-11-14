@@ -151,3 +151,35 @@ Module(
     return await message.sendReply(formattedResult);
   }
 );
+    fromMe: true, 
+    desc: "Analyzes the sentiment and topic of a quoted message using Gemini AI.",
+    usage: 'Reply to any message with `.analyze`',
+  },
+  async (message, match) => {
+    if (!message.reply_message || !message.reply_message.text) {
+        return await message.sendReply(`_Please reply to a text message with the command: \`.analyze\`_`);
+    }
+
+    const textToAnalyze = message.reply_message.text;
+
+    await message.sendReply(`_Analyzing the quoted message using structured output..._`);
+
+    // 1. Get the structured JSON analysis
+    const analysisResult = await analyzeMessage(textToAnalyze);
+
+    // 2. Check for string (error)
+    if (typeof analysisResult === 'string') {
+        return await message.sendReply(analysisResult);
+    }
+
+    // 3. Format the successful JSON analysis into a readable WhatsApp message
+    const formattedResult = 
+        `*💬 Message Analysis (Gemini AI) 📊*\n\n` + 
+        `*📈 Sentiment:* ${analysisResult.sentiment}\n` +
+        `*💡 Topic Summary:* ${analysisResult.topicSummary}\n\n` +
+        `*🔑 Keywords:* ${analysisResult.keywords.join(', ')}\n\n` +
+        `*✍️ Suggested Response:* _${analysisResult.responseSuggestion}_`;
+
+    return await message.sendReply(formattedResult);
+  }
+);
