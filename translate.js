@@ -1,14 +1,15 @@
 const { Module } = require('../main');
 const axios = require('axios');
 
-// --- LibreTranslate API ---
-const TRANSLATE_API = "https://libretranslate.de/translate";
+// --- RapidAPI credentials ---
+const RAPID_API_KEY = 'your_rapidapi_key_here'; // Replace with your actual key
+const TRANSLATE_API = 'https://google-translate1.p.rapidapi.com/language/translate/v2';
 
 // --- Translator Command ---
 Module({
   pattern: 'trt ?(.*)',
   fromMe: false,
-  desc: 'Translate text to a target language',
+  desc: 'Translate text using Google Translate API',
   type: 'utility'
 }, async (message, match) => {
   let input = match[1]?.trim();
@@ -28,28 +29,30 @@ Module({
     textToTranslate = parts.join(' ');
   }
 
-  // Validation
   if (!textToTranslate || !targetLang) {
     return await message.sendReply("❌ Usage:\n.trt <lang> (when replying)\n.trt <text> <lang>");
   }
 
   try {
-    const res = await axios.post(TRANSLATE_API, {
+    const res = await axios.post(TRANSLATE_API, new URLSearchParams({
       q: textToTranslate,
-      source: "auto",
       target: targetLang,
-      format: "text"
-    }, {
-      headers: { "Content-Type": "application/json" }
+      source: 'auto'
+    }), {
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'X-RapidAPI-Key': RAPID_API_KEY,
+        'X-RapidAPI-Host': 'google-translate1.p.rapidapi.com'
+      }
     });
 
-    const translated = res.data?.translatedText;
+    const translated = res.data?.data?.translations[0]?.translatedText;
     if (!translated) throw new Error("No translation returned");
 
     await message.client.sendMessage(message.jid, {
       text: `🌐 *Translated to ${targetLang}:*\n${translated}`
     });
   } catch (err) {
-    await message.sendReply("❌ Translation failed. Make sure the language code is valid (e.g. 'fr', 'sw', 'de').");
+    await message.sendReply("❌ Translation failed. Check your API key and language code.");
   }
 });
