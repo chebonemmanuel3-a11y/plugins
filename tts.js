@@ -1,10 +1,12 @@
 const { Module } = require('../main');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 Module({
   pattern: 'tts ?(.*)',
   fromMe: false,
-  desc: 'Convert text to speech and return audio link',
+  desc: 'Convert text to speech and send audio',
   type: 'utility'
 }, async (message, match) => {
   const input = match[1]?.trim();
@@ -13,7 +15,7 @@ Module({
   try {
     const res = await axios.post("https://ttsmp3.com/makemp3_new.php", new URLSearchParams({
       msg: input,
-      lang: "Joanna", // Voice name (Joanna = English female)
+      lang: "Joanna", // English female voice
       source: "ttsmp3"
     }), {
       headers: {
@@ -26,8 +28,14 @@ Module({
       throw new Error("No audio returned");
     }
 
+    // Download the audio file
+    const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(audioRes.data, 'binary');
+
     await message.client.sendMessage(message.jid, {
-      text: `🔊 *Speech Output:*\n${audioUrl}`
+      audio: buffer,
+      mimetype: 'audio/mp3',
+      ptt: true // sends as voice note
     });
   } catch (err) {
     await message.sendReply("❌ TTS failed. Try shorter text or check your internet.");
