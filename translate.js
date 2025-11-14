@@ -39,9 +39,13 @@ Module({
       source: "auto",
       target: targetLang,
       format: "text"
+    }, {
+      headers: { "Content-Type": "application/json" }
     });
 
-    const translated = res.data.translatedText;
+    const translated = res.data?.translatedText;
+    if (!translated) throw new Error("No translation returned");
+
     await message.client.sendMessage(message.jid, {
       text: `🌐 *Translated to ${targetLang}:*\n${translated}`
     });
