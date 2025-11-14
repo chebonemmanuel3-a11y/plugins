@@ -6,9 +6,6 @@ const axios = require("axios");
 const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
 const MODEL = "gemini-2.5-flash"; 
 
-// --- Configuration for Message Length ---
-const MAX_MESSAGE_LENGTH = 2000; // Limit to 2000 characters for reliable analysis
-
 // --- JSON Schema Definition (Ensures structured analysis) ---
 const analysisSchema = {
     type: "OBJECT",
@@ -39,13 +36,13 @@ async function analyzeMessage(textToAnalyze) {
 
     const apiUrl = `${API_BASE_URL}${MODEL}:generateContent?key=${apiKey}`;
 
-    // The full user query now includes the text to analyze as part of the prompt
-    const userQuery = `Analyze the following WhatsApp message strictly according to the provided JSON schema. Message: "${textToAnalyze}"`;
+    const userQuery = `Analyze the following WhatsApp message strictly according to the provided JSON schema.`;
 
     const payload = {
         contents: [{ 
             parts: [
-                { text: userQuery }
+                { text: userQuery },
+                { text: `\n\n--- Message to Analyze ---\n${textToAnalyze}` }
             ] 
         }],
         generationConfig: {
@@ -63,7 +60,8 @@ async function analyzeMessage(textToAnalyze) {
     try {
         const response = await axios.post(apiUrl, payload, {
             headers: { 'Content-Type': 'application/json' },
-            timeout: 15000, 
+            // --- EDIT MADE HERE: Increased timeout for large inputs ---
+            timeout: 30000, // Increased to 30 seconds
         });
 
         const jsonString = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -77,7 +75,6 @@ async function analyzeMessage(textToAnalyze) {
     } catch (error) {
         console.error("Message analysis error:", error.message);
         if (error.response) {
-            // Include API error message if available
             return `_❌ API Error: ${error.response.data?.error?.message || "Unknown API error"}_`;
         }
         return "_❌ Network or Parsing error. Please check your API key and retry._";
@@ -87,6 +84,40 @@ async function analyzeMessage(textToAnalyze) {
 // --- Command Module Definition (.analyze) ---
 
 Module(
+  {
+    pattern: "analyze",
+    fromMe: true, 
+    desc: "Analyzes the sentiment and topic of a quoted message using Gemini AI.",
+    usage: 'Reply to any message with `.analyze`',
+  },
+  async (message, match) => {
+    // Check if the user replied to a message, and if that message contains text
+    if (!message.reply_message || !message.reply_message.text) {
+        return await message.sendReply(`_Please reply to a text message with the command: \`.analyze\`_`);
+    }
+
+    const textToAnalyze = message.reply_message.text;
+
+    await message.sendReply(`_Analyzing the quoted message using structured output..._`);
+
+    const analysisResult = await analyzeMessage(textToAnalyze);
+
+    // If the result is a string, it's an error message
+    if (typeof analysisResult === 'string') {
+        return await message.sendReply(analysisResult);
+    }
+
+    // Format the successful JSON analysis into a readable WhatsApp message
+    const formattedResult = 
+        `*💬 Message Analysis (Gemini AI) 📊*\n\n` + 
+        `*📈 Sentiment:* ${analysisResult.sentiment}\n` +
+        `*💡 Topic Summary:* ${analysisResult.topicSummary}\n\n` +
+        `*🔑 Keywords:* ${analysisResult.keywords.join(', ')}\n\n` +
+        `*✍️ Suggested Response:* _${analysisResult.responseSuggestion}_`;
+
+    return await message.sendReply(formattedResult);
+  }
+);
   {
     pattern: "analyze",
     fromMe: true, 
