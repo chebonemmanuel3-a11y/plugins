@@ -6,7 +6,7 @@ const axios = require("axios");
 const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
 const MODEL = "gemini-2.5-flash"; 
 
-// --- JSON Schema Definition ---
+// --- JSON Schema Definition (Ensures structured analysis) ---
 const analysisSchema = {
     type: "OBJECT",
     properties: {
@@ -19,7 +19,6 @@ const analysisSchema = {
             "description": "3 to 5 key terms from the message."
         }
     },
-    // Ensure a clear, logical order in the output JSON
     "propertyOrdering": ["topicSummary", "sentiment", "responseSuggestion", "keywords"]
 };
 
@@ -67,7 +66,6 @@ async function analyzeMessage(textToAnalyze) {
         const jsonString = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (jsonString) {
-            // Attempt to parse the JSON
             const analysis = JSON.parse(jsonString);
             return analysis;
         } else {
@@ -92,6 +90,7 @@ Module(
     usage: 'Reply to any message with `.analyze`',
   },
   async (message, match) => {
+    // Check if the user replied to a message, and if that message contains text
     if (!message.reply_message || !message.reply_message.text) {
         return await message.sendReply(`_Please reply to a text message with the command: \`.analyze\`_`);
     }
@@ -100,15 +99,14 @@ Module(
 
     await message.sendReply(`_Analyzing the quoted message using structured output..._`);
 
-    // 1. Get the structured JSON analysis
     const analysisResult = await analyzeMessage(textToAnalyze);
 
-    // 2. Check for string (error)
+    // If the result is a string, it's an error message
     if (typeof analysisResult === 'string') {
         return await message.sendReply(analysisResult);
     }
 
-    // 3. Format the successful JSON analysis into a readable WhatsApp message
+    // Format the successful JSON analysis into a readable WhatsApp message
     const formattedResult = 
         `*💬 Message Analysis (Gemini AI) 📊*\n\n` + 
         `*📈 Sentiment:* ${analysisResult.sentiment}\n` +
@@ -119,20 +117,7 @@ Module(
     return await message.sendReply(formattedResult);
   }
 );
-    fromMe: true, 
-    desc: "Analyzes the sentiment and topic of a quoted message using Gemini AI.",
-    usage: 'Reply to any message with `.analyze`',
-  },
-  async (message, match) => {
-    if (!message.reply_message || !message.reply_message.text) {
-        return await message.sendReply(`_Please reply to a text message with the command: \`.analyze\`_`);
-    }
-
-    const textToAnalyze = message.reply_message.text;
-
-    await message.sendReply(`_Analyzing the quoted message using structured output..._`);
-
-    // 1. Get the structured JSON analysis
+// 1. Get the structured JSON analysis
     const analysisResult = await analyzeMessage(textToAnalyze);
 
     // 2. Check for string (error)
