@@ -1,6 +1,9 @@
 const { Module } = require('../main');
 const axios = require('axios');
 
+// --- Global Quiz Store ---
+const activeQuizzes = new Map(); // Stores correct answers by chat ID
+
 // --- Helper to shuffle options ---
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -10,7 +13,7 @@ function shuffle(array) {
   return array;
 }
 
-// --- Quiz Command ---
+// --- QUIZ COMMAND ---
 Module({
   pattern: 'quiz',
   fromMe: false,
@@ -36,8 +39,7 @@ Module({
       quizText += `\n`;
     });
 
-    // Store answer key in memory (or use a global map if needed)
-    message.quizAnswers = answerKey;
+    activeQuizzes.set(message.jid, answerKey); // Store answers by chat ID
 
     quizText += `✅ Reply with \`.answers A B C D E\` to submit your answers.`;
     await message.client.sendMessage(message.jid, { text: quizText });
@@ -46,7 +48,7 @@ Module({
   }
 });
 
-// --- Answer Checker ---
+// --- ANSWER CHECKER ---
 Module({
   pattern: 'answers ?(.*)',
   fromMe: false,
@@ -55,25 +57,4 @@ Module({
 }, async (message, match) => {
   const input = match[1]?.trim().toUpperCase().split(' ');
   if (!input || input.length !== 5) {
-    return await message.sendReply("❌ Please submit 5 answers like `.answers A B C D E`");
-  }
-
-  const answerKey = message.quizAnswers;
-  if (!answerKey || answerKey.length !== 5) {
-    return await message.sendReply("❌ No quiz in progress. Start one with `.quiz`");
-  }
-
-  let score = 0;
-  let resultText = `📊 *Quiz Results:*\n\n`;
-
-  input.forEach((ans, i) => {
-    const correctLetter = String.fromCharCode(65 + answerKey[i]);
-    const isCorrect = ans === correctLetter;
-
-    resultText += `*Q${i + 1}:* ${isCorrect ? '✅ Correct' : `❌ Incorrect (Correct: ${correctLetter})`}\n`;
-    if (isCorrect) score++;
-  });
-
-  resultText += `🎯 *Your Score:* ${score}/5`;
-  await message.client.sendMessage(message.jid, { text: resultText });
-});
+    return await message.sendReply("❌ Please submit 5 answers like `.
