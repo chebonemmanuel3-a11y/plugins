@@ -1,32 +1,34 @@
 const { Module } = require("../main");
-const chrono = require("chrono-node"); // Make sure this is installed
-
-const reminders = [];
 
 Module({
   pattern: "remindme ?(.*)",
   fromMe: true,
-  desc: "Set a reminder (e.g. .remindme in 2h Drink water)",
+  desc: "Set a reminder (e.g. .remindme 2m Drink water)",
+  usage: ".remindme 10m Pray\n.remindme 1h Check oven",
 }, async (message, match) => {
   const input = match[1]?.trim();
-  if (!input) return await message.sendReply("_Usage: .remindme in 2h Take a break_");
+  if (!input) return await message.sendReply("_Usage: .remindme 10m Pray_");
 
-  const [timePart, ...msgParts] = input.split(" ");
-  const reminderText = msgParts.join(" ").trim();
-  const parsedDate = chrono.parseDate(input);
-
-  if (!parsedDate || !reminderText) {
-    return await message.sendReply("_❌ Could not understand the time or message. Try: .remindme in 2h Drink water_");
+  const timeMatch = input.match(/^(\d+)([smhd])\s+(.*)$/i);
+  if (!timeMatch) {
+    return await message.sendReply("_❌ Invalid format. Try: .remindme 10m Drink water_");
   }
 
-  const delay = parsedDate.getTime() - Date.now();
-  if (delay <= 0) return await message.sendReply("_⏰ That time is already past. Try a future time._");
+  const amount = parseInt(timeMatch[1]);
+  const unit = timeMatch[2].toLowerCase();
+  const reminderText = timeMatch[3];
 
-  reminders.push({ time: parsedDate, text: reminderText, chat: message.jid });
+  let delay = 0;
+  if (unit === "s") delay = amount * 1000;
+  else if (unit === "m") delay = amount * 60 * 1000;
+  else if (unit === "h") delay = amount * 60 * 60 * 1000;
+  else if (unit === "d") delay = amount * 24 * 60 * 60 * 1000;
+
+  if (delay <= 0) return await message.sendReply("_⏰ Time must be greater than zero._");
+
+  await message.sendReply(`_✅ Reminder set for ${amount}${unit}: ${reminderText}_`);
 
   setTimeout(async () => {
     await message.sendMessage(message.jid, `_🔔 Reminder: ${reminderText}_`);
   }, delay);
-
-  return await message.sendReply(`_✅ Reminder set for ${parsedDate.toLocaleString()}_`);
 });
