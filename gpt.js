@@ -1,8 +1,8 @@
 const { Module } = require("../main");
 const axios = require("axios");
 
-// In-memory storage for the GPT API key (simple and effective for testing)
-let GPT_API_KEY = null;
+// In-memory GPT key
+let GPT_API_KEY =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;
 
 // --- Set GPT API Key ---
 Module({
@@ -20,26 +20,57 @@ Module({
   return await message.sendReply("_✅ GPT API key saved successfully._");
 });
 
-// --- Core GPT call (kept simple, like your .recipe pipeline) ---
-async function askGPT(query) {
-  if (!GPT_API_KEY) {
-    return "_❌ GPT API key not set. Use `.setkey your_openai_api_key_here` first._";
+// --- Ask GPT with Search ---
+Module({
+  pattern: "gptsearch ?(.*)",
+  fromMe: false,
+  desc: "Ask GPT with real-time search",
+  usage: ".gptsearch what is Toxic Lyrikali’s latest release",
+}, async (message, match) => {
+  const query = match[1]?.trim();
+  if (!query) {
+    return await message.sendReply("_Please ask a question or give a prompt._\n*Usage:* `.gptsearch what is the capital of Kenya`");
   }
 
-  const apiUrl = "https://api.openai.com/v1/chat/completions";
+  if (!GPT_API_KEY) {
+    return await message.sendReply("_❌ GPT API key not set. Use `.setkey your_openai_api_key_here` first._");
+  }
+
+  await message.sendReply("_Thinking with GPT + Search..._");
+
+  // Get today's date
+  const today = new Date().toLocaleString("en-KE", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric"
+  });
+
+  // Search the web using Copilot’s search tool
+  const searchResults = await axios.get(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(query)}`, {
+    headers: {
+      "Ocp-Apim-Subscription-Key": "YOUR_BING_SEARCH_API_KEY"
+    }
+  });
+
+  const snippets = searchResults?.data?.webPages?.value?.slice(0, 3)?.map(r => `• ${r.name}: ${r.snippet}`)?.join("\n") || "No search results found.";
+
+  const prompt = `FYI: Today is ${today}. You are in Kabarnet, Kenya.\nBased on the latest search results:\n${snippets}\n\nNow answer this: ${query}`;
+
   const payload = {
-    // Use a fast, reliable model. You can change to "gpt-4" if your key supports it.
-    model: "gpt-4o-mini",
+    model: "gpt-4",
     messages: [
-      { role: "system", content: "You are a helpful, concise assistant. Be accurate and clear." },
-      { role: "user", content: query }
+      { role: "system", content: "You are a helpful assistant that uses search results to answer questions accurately." },
+      { role: "user", content: prompt }
     ],
     temperature: 0.6,
-    max_tokens: 800
+    max_tokens: 1024
   };
 
   try {
-    const res = await axios.post(apiUrl, payload, {
+    const response = await axios.post("https://api.openai.com/v1/chat/completions", payload, {
       headers: {
         "Authorization": `Bearer ${GPT_API_KEY}`,
         "Content-Type": "application/json"
@@ -47,34 +78,12 @@ async function askGPT(query) {
       timeout: 20000
     });
 
-    const text = res?.data?.choices?.[0]?.message?.content?.trim();
-    if (!text) return "_❌ No response from GPT. Try again._";
-    return text;
+    const reply = response.data?.choices?.[0]?.message?.content?.trim();
+    if (!reply) return await message.sendReply("_❌ No response from GPT. Try again._");
+
+    return await message.sendReply(reply);
   } catch (err) {
-    console.error("GPT error:", err?.response?.data || err.message);
-    if (err.response?.status === 401) {
-      return "_❌ Unauthorized. Your API key may be invalid or expired._";
-    }
-    return "_❌ Error contacting GPT. Please try again later._";
+    console.error("GPTSearch error:", err?.response?.data || err.message);
+    return await message.sendReply("_❌ Error contacting GPT or Search. Please try again later._");
   }
-}
-
-// --- Ask GPT Anything ---
-Module({
-  pattern: "gpt ?(.*)",
-  fromMe: false,
-  desc: "Ask GPT anything (facts, translation, summaries, etc.)",
-  usage: ".gpt what is the capital of Kenya",
-}, async (message, match) => {
-  const query = match[1]?.trim();
-  if (!query) {
-    return await message.sendReply("_Please ask a question or give a prompt._\n*Usage:* `.gpt what is the capital of Kenya`");
-  }
-
-  await message.sendReply("_Thinking with GPT..._");
-
-  const output = await askGPT(query);
-
-  // If the core call returned a string error, send it directly
-  return await message.sendReply(output);
 });
