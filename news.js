@@ -1,36 +1,35 @@
 const { Module } = require('../main');
 const axios = require('axios');
-
-// Hard-coded NewsAPI key
-const API_KEY = 'e20948fbf807498ab154e6c1cb73e0b6';
+const cheerio = require('cheerio'); // install cheerio for HTML parsing
 
 Module({
-  pattern: 'news ?(.*)',
+  pattern: 'tuko',
   fromMe: false,
-  desc: 'Fetch latest news from Kenya',
+  desc: 'Fetch latest headlines from Tuko Kenya',
   type: 'news'
-}, async (message, match) => {
+}, async (message) => {
   try {
-    const res = await axios.get("https://newsapi.org/v2/top-headlines", {
-      params: {
-        country: "ke",   // Kenya
-        pageSize: 5,     // top 5 headlines
-        apiKey: API_KEY
+    const res = await axios.get("https://www.tuko.co.ke/latest/");
+    const $ = cheerio.load(res.data);
+
+    let headlines = [];
+    $('article h3 a').each((i, el) => {
+      if (i < 5) { // limit to top 5
+        headlines.push($(el).text().trim());
       }
     });
 
-    const articles = res.data.articles;
-    if (!articles || articles.length === 0) {
-      return await message.sendReply("❌ No news found right now.");
+    if (headlines.length === 0) {
+      return await message.sendReply("❌ No headlines found from Tuko right now.");
     }
 
-    let text = `📰 *Top News from Kenya*\n\n`;
-    articles.forEach((a, i) => {
-      text += `${i + 1}. ${a.title}\n${a.source.name}\n\n`;
+    let text = `📰 *Latest Tuko News*\n\n`;
+    headlines.forEach((h, i) => {
+      text += `${i + 1}. ${h}\n\n`;
     });
 
     await message.client.sendMessage(message.jid, { text });
   } catch (err) {
-    await message.sendReply("❌ Couldn't fetch Kenya news. Check your API key or internet.");
+    await message.sendReply("❌ Couldn't fetch Tuko news. Check your internet or site availability.");
   }
 });
