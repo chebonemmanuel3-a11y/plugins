@@ -4,13 +4,12 @@ const axios = require('axios');
 Module({
   pattern: 'currency ?(.*)',
   fromMe: false,
-  desc: 'Convert currencies live (e.g. .currency 100 usd kes)',
+  desc: 'Convert currencies live (e.g. .currency 100 kes usd)',
   type: 'utility'
 }, async (message, match) => {
   const input = match[1]?.trim();
-  if (!input) return await message.sendReply("❌ Usage: .currency <amount> <from> <to>\nExample: .currency 100 usd kes");
+  if (!input) return await message.sendReply("❌ Usage: .currency <amount> <from> <to>\nExample: .currency 100 kes usd");
 
-  // Parse input: amount, from, to
   const parts = input.split(/\s+/);
   if (parts.length < 3) return await message.sendReply("❌ Please provide: amount, from, to\nExample: .currency 250 eur kes");
 
