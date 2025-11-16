@@ -4,7 +4,7 @@ let autoDpInterval;
 
 Module({
   pattern: 'autodp ?(.*)',
-  fromMe: true,
+  fromMe: false,
   desc: 'Auto generate images from a prompt, set as DP, then delete',
   type: 'utility'
 }, async (message, match) => {
@@ -49,7 +49,7 @@ Module({
 
 Module({
   pattern: 'stopautodp',
-  fromMe: true,
+  fromMe: false,
   desc: 'Stop AutoDP loop',
   type: 'utility'
 }, async (message) => {
