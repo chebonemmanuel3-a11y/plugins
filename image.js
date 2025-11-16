@@ -1,5 +1,4 @@
 const { Module } = require('../main');
-const axios = require('axios');
 
 Module({
   pattern: 'image ?(.*)',
@@ -15,7 +14,7 @@ Module({
 
     await message.sendReply(`🔍 Fetching a random "${prompt}" image...`);
 
-    // SourceSplash direct random image link
+    // Build SourceSplash URL
     const imageUrl = `https://www.sourcesplash.com/i/random?q=${encodeURIComponent(prompt)}`;
 
     // Send the image directly
